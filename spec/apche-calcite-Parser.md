@@ -348,3 +348,63 @@ IntervalQualifier  ::= ( "YEAR" | "QUARTER" | "MONTH" | "WEEK" | "DAY" | "HOUR" 
 IntervalQualifierStart ::= ( "YEAR" | "QUARTER" | "MONTH" | "WEEK" | "DAY" | "HOUR" | "MINUTE" )
                            [ "(" UnsignedIntLiteral ")" ]
                          | "SECOND" [ "(" UnsignedIntLiteral [ "," UnsignedIntLiteral ] ")" ]
+```
+
+#### 7. 補助規則 (Helper Productions)
+
+```ebnf
+AddSetOpQuery       ::= BinaryQueryOperator LeafQueryOrExpr
+BinaryQueryOperator ::= ( "UNION" | "INTERSECT" | "EXCEPT" ) [ "ALL" | "DISTINCT" ]
+
+ParenthesizedExpression ::= "(" ( OrderedQueryOrExpr | Expression ) ")"
+ParenthesizedQueryOrCommaList ::= "(" ( OrderedQueryOrExpr | ExpressionList ) ")"
+ParenthesizedQueryOrCommaListWithDefault ::= "(" [ ExpressionOrDefault { "," ExpressionOrDefault } ] ")"
+ExpressionList      ::= Expression { "," Expression }
+ExpressionOrDefault ::= Expression | "DEFAULT"
+
+SimpleIdentifierList ::= SimpleIdentifier { "," SimpleIdentifier }
+SimpleIdentifier    ::= Identifier
+CompoundIdentifier  ::= SimpleIdentifier { "." SimpleIdentifier }
+Identifier          ::= IDENTIFIER | HYPHENATED_IDENTIFIER | QUOTED_IDENTIFIER
+                      | BACK_QUOTED_IDENTIFIER | BIG_QUERY_BACK_QUOTED_IDENTIFIER
+                      | BRACKET_QUOTED_IDENTIFIER
+SimpleIdentifierFromStringLiteral ::= StringLiteral
+
+Hint               ::= "/*+" HintItem { "," HintItem } "*/"
+HintItem           ::= SimpleIdentifier [ "(" [ Literal { "," Literal } ] ")" ]
+TableHints         ::= Hint
+SqlSelectKeywords  ::= /* empty (dialect-specific) */
+
+OverClause         ::= /* empty (table OVER not enabled in base parser) */
+ExtendedTableRef   ::= /* empty (parser extension point) */
+
+TableFunctionCall  ::= "TABLE" "(" [ "SPECIFIC" ] NamedRoutineCall ")"
+ImplicitTableFunctionCallArgs ::= CompoundIdentifier "(" [ Expression { "," Expression } ] ")"
+NamedRoutineCall   ::= [ "SPECIFIC" ] CompoundIdentifier FunctionParameterList
+FunctionParameterList ::= "(" [ SetQuantifier ] [ Expression { "," Expression } ] ")"
+SetQuantifier      ::= "ALL" | "DISTINCT"
+NamedFunctionCall  ::= CompoundIdentifier FunctionParameterList
+JdbcFunctionCall   ::= "{fn" CompoundIdentifier "(" [ Expression { "," Expression } ] ")" "}"
+
+DynamicParam       ::= "?" | ":" UnsignedIntLiteral
+CursorExpression   ::= "CURSOR" "(" OrderedQueryOrExpr ")"
+ContextVariable    ::= "CURRENT_USER" | "CURRENT_DATE" | "CURRENT_TIME"
+                     | "CURRENT_TIMESTAMP" | "LOCALTIME" | "LOCALTIMESTAMP"
+NewSpecification   ::= "NEW" SimpleIdentifier
+SequenceExpression ::= ( "NEXT" | "CURRENT" ) "VALUE" "FOR" CompoundIdentifier
+
+SimpleIdentifierOrList ::= SimpleIdentifier | "(" SimpleIdentifierList ")"
+PivotAgg           ::= Expression [ "AS" SimpleIdentifier ]
+PivotValue         ::= Expression [ "AS" SimpleIdentifier ]
+UnpivotValue       ::= Expression [ "AS" SimpleIdentifier ]
+
+MeasureColumn      ::= Expression [ "AS" SimpleIdentifier ]
+PatternExpression  ::= Expression
+SubsetDefinition   ::= SimpleIdentifier "=" "(" SimpleIdentifierList ")"
+PatternDefinition  ::= SimpleIdentifier "AS" Expression
+SkipTo             ::= "PAST" "LAST" "ROW"
+                     | "TO" "NEXT" "ROW"
+                     | "TO" "FIRST" SimpleIdentifier
+                     | "TO" "LAST" SimpleIdentifier
+
+```
