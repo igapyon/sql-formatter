@@ -659,6 +659,12 @@ class CalciteParser {
     } else if (this.isKeyword("FETCH")) {
       fetch = this.FetchClause();
     }
+    if (fetch && !orderBy) {
+      throw new Error("FETCH requires ORDER BY");
+    }
+    if (limit && fetch) {
+      throw new Error("LIMIT and FETCH cannot be combined");
+    }
     return { type: "OrderByLimitOpt", orderBy, limit, offset, fetch };
   }
 
