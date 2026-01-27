@@ -2441,15 +2441,39 @@ class CalciteParser {
   }
 
   SqlSelectKeywords() {
-    return this.notImplemented("SqlSelectKeywords");
+    // Dialect-specific; empty in base grammar
+    return null;
   }
 
   ParenthesizedLiteralOptionCommaList() {
-    return this.notImplemented("ParenthesizedLiteralOptionCommaList");
+    this.expectSymbol("(");
+    const items = [];
+    if (!this.isSymbol(")")) {
+      items.push(this.Literal());
+      while (this.acceptSymbol(",")) {
+        items.push(this.Literal());
+      }
+    }
+    this.expectSymbol(")");
+    return { type: "ParenthesizedLiteralOptionCommaList", items };
   }
 
   ParenthesizedKeyValueOptionCommaList() {
-    return this.notImplemented("ParenthesizedKeyValueOptionCommaList");
+    this.expectSymbol("(");
+    const items = [];
+    const readKey = () => (this.peek().type === "IDENT" ? this.SimpleIdentifier() : this.StringLiteral());
+    const key1 = readKey();
+    this.expectSymbol("=");
+    const val1 = this.StringLiteral();
+    items.push({ key: key1, value: val1 });
+    while (this.acceptSymbol(",")) {
+      const k = readKey();
+      this.expectSymbol("=");
+      const v = this.StringLiteral();
+      items.push({ key: k, value: v });
+    }
+    this.expectSymbol(")");
+    return { type: "ParenthesizedKeyValueOptionCommaList", items };
   }
 
   Where() {
