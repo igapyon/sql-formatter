@@ -3090,7 +3090,7 @@ class CalciteParser {
     else if (this.acceptKeyword("ARRAY_CONCAT_AGG")) name = "ARRAY_CONCAT_AGG";
     else if (this.acceptKeyword("GROUP_CONCAT")) name = "GROUP_CONCAT";
     else if (this.acceptKeyword("STRING_AGG")) name = "STRING_AGG";
-    else return this.notImplemented("StringAggFunctionCall");
+    else return null;
     this.expectSymbol("(");
     let quantifier = null;
     if (this.acceptKeyword("ALL")) quantifier = "ALL";
@@ -3119,7 +3119,7 @@ class CalciteParser {
     let name;
     if (this.acceptKeyword("PERCENTILE_CONT")) name = "PERCENTILE_CONT";
     else if (this.acceptKeyword("PERCENTILE_DISC")) name = "PERCENTILE_DISC";
-    else return this.notImplemented("PercentileFunctionCall");
+    else return null;
     this.expectSymbol("(");
     const expr = this.Expression();
     let numeric = null;
@@ -3139,7 +3139,7 @@ class CalciteParser {
     if (this.acceptKeyword("TUMBLE")) name = "TUMBLE";
     else if (this.acceptKeyword("HOP")) name = "HOP";
     else if (this.acceptKeyword("SESSION")) name = "SESSION";
-    else return this.notImplemented("GroupByWindowingCall");
+    else return null;
     const params = this.FunctionParameterList();
     return { type: "GroupByWindowingCall", name, params };
   }

@@ -40,7 +40,6 @@
 ## 未実装一覧（notImplemented が残るもの）
 AddExpression / AddCompoundIdentifierTypes /
 ReservedFunctionName / NonReservedKeyWord /
-StringAggFunctionCall / PercentileFunctionCall / GroupByWindowingCall /
 DynamicParam / ContextVariable / SequenceExpression /
 PatternPrimary / weekdayName / Year / Quarter / Month / Week / Day / Hour / Minute / Second /
 JsonNameAndValue /
