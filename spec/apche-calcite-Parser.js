@@ -2162,7 +2162,10 @@ class CalciteParser {
     if (this.isKeyword("TRUE") || this.isKeyword("FALSE") || this.isKeyword("UNKNOWN") || this.isKeyword("NULL")) {
       return this.SpecialLiteral();
     }
-    if (this.isSymbol("{")) return this.DateTimeLiteral();
+    if (this.isSymbol("{") || this.isKeyword("DATE") || this.isKeyword("DATETIME") ||
+        this.isKeyword("TIME") || this.isKeyword("UUID") || this.isKeyword("TIMESTAMP")) {
+      return this.DateTimeLiteral();
+    }
     return this.notImplemented("NonIntervalLiteral");
   }
 
@@ -2176,11 +2179,15 @@ class CalciteParser {
 
   UnsignedNumericLiteral() {
     const t = this.peek();
-    if (t.type !== "NUMBER") {
-      throw new Error(`Expected unsigned numeric literal but got ${t.type}:${t.value}`);
+    if (t.type === "NUMBER") {
+      this.next();
+      return { type: "UnsignedNumericLiteral", value: t.value };
     }
-    this.next();
-    return { type: "UnsignedNumericLiteral", value: t.value };
+    if (this.acceptKeyword("DECIMAL")) {
+      const literal = this.SimpleStringLiteral();
+      return { type: "UnsignedNumericLiteral", value: { type: "DECIMAL", literal } };
+    }
+    return this.notImplemented("UnsignedNumericLiteral");
   }
 
   SpecialLiteral() {
@@ -2192,19 +2199,44 @@ class CalciteParser {
   }
 
   DateTimeLiteral() {
-    this.expectSymbol("{");
-    const kindToken = this.peek();
-    if (kindToken.type !== "IDENT") {
-      throw new Error(`Expected datetime literal kind but got ${kindToken.type}:${kindToken.value}`);
+    if (this.isSymbol("{")) {
+      this.expectSymbol("{");
+      const kindToken = this.peek();
+      if (kindToken.type !== "IDENT") {
+        throw new Error(`Expected datetime literal kind but got ${kindToken.type}:${kindToken.value}`);
+      }
+      const kind = String(kindToken.value).toLowerCase();
+      if (kind !== "d" && kind !== "t" && kind !== "ts") {
+        throw new Error(`Expected d|t|ts but got ${kindToken.value}`);
+      }
+      this.next();
+      const value = this.StringLiteral();
+      this.expectSymbol("}");
+      return { type: "DateTimeLiteral", kind, value };
     }
-    const kind = String(kindToken.value).toLowerCase();
-    if (kind !== "d" && kind !== "t" && kind !== "ts") {
-      throw new Error(`Expected d|t|ts but got ${kindToken.value}`);
+    if (this.isKeyword("TIME") && this.isKeywordAt("WITH", 1)) {
+      this.expectKeyword("WITH");
+      const local = Boolean(this.acceptKeyword("LOCAL"));
+      this.expectKeyword("TIME");
+      this.expectKeyword("ZONE");
+      const value = this.SimpleStringLiteral();
+      return { type: "DateTimeLiteral", kind: "TIME WITH TIME ZONE", local, value };
     }
-    this.next();
-    const value = this.StringLiteral();
-    this.expectSymbol("}");
-    return { type: "DateTimeLiteral", kind, value };
+    if (this.isKeyword("TIMESTAMP") && this.isKeywordAt("WITH", 1)) {
+      this.expectKeyword("WITH");
+      const local = Boolean(this.acceptKeyword("LOCAL"));
+      this.expectKeyword("TIME");
+      this.expectKeyword("ZONE");
+      const value = this.SimpleStringLiteral();
+      return { type: "DateTimeLiteral", kind: "TIMESTAMP WITH TIME ZONE", local, value };
+    }
+    if (this.acceptKeyword("DATE") || this.acceptKeyword("DATETIME") || this.acceptKeyword("TIME") ||
+        this.acceptKeyword("UUID") || this.acceptKeyword("TIMESTAMP")) {
+      const kind = String(this.tokens[this.pos - 1].value).toUpperCase();
+      const value = this.SimpleStringLiteral();
+      return { type: "DateTimeLiteral", kind, value };
+    }
+    return this.notImplemented("DateTimeLiteral");
   }
 
   IntervalLiteral() {
