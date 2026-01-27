@@ -176,6 +176,9 @@ class CalciteParser {
     }
     return false;
   }
+  isTableHintsStart() {
+    return this.isSymbol("/") && this.isSymbolAt("*", 1) && this.isSymbolAt("+", 2);
+  }
   expect(type) {
     const t = this.peek();
     if (t.type !== type) {
@@ -374,7 +377,7 @@ class CalciteParser {
     this.expectKeyword("INTO");
     const table = this.CompoundTableIdentifier();
     let hints = null;
-    if (this.isSymbol("/") || this.isKeyword("/*+")) {
+    if (this.isTableHintsStart()) {
       hints = this.TableHints();
     }
     let extend = null;
@@ -398,7 +401,7 @@ class CalciteParser {
     this.expectKeyword("FROM");
     const table = this.CompoundTableIdentifier();
     let hints = null;
-    if (this.isSymbol("/") || this.isKeyword("/*+")) {
+    if (this.isTableHintsStart()) {
       hints = this.TableHints();
     }
     let extend = null;
@@ -422,7 +425,7 @@ class CalciteParser {
     this.expectKeyword("UPDATE");
     const table = this.CompoundTableIdentifier();
     let hints = null;
-    if (this.isSymbol("/") || this.isKeyword("/*+")) {
+    if (this.isTableHintsStart()) {
       hints = this.TableHints();
     }
     let extend = null;
@@ -459,7 +462,7 @@ class CalciteParser {
     this.expectKeyword("INTO");
     const table = this.CompoundTableIdentifier();
     let hints = null;
-    if (this.isSymbol("/") || this.isKeyword("/*+")) {
+    if (this.isTableHintsStart()) {
       hints = this.TableHints();
     }
     let extend = null;
@@ -619,7 +622,10 @@ class CalciteParser {
 
   SqlSelect() {
     this.expectKeyword("SELECT");
-    // hints and SqlSelectKeywords are dialect-specific; skip here.
+    let hints = null;
+    if (this.isTableHintsStart()) {
+      hints = this.TableHints();
+    }
     const stream = Boolean(this.acceptKeyword("STREAM"));
     let setQuantifier = null;
     if (this.acceptKeyword("ALL")) setQuantifier = "ALL";
@@ -644,6 +650,7 @@ class CalciteParser {
     }
     return {
       type: "SqlSelect",
+      hints,
       stream,
       setQuantifier,
       selectItems,
@@ -2089,7 +2096,16 @@ class CalciteParser {
   }
 
   TableHints() {
-    return this.notImplemented("TableHints");
+    this.expectSymbol("/");
+    this.expectSymbol("*");
+    this.expectSymbol("+");
+    const hints = [this.AddHint()];
+    while (this.acceptSymbol(",")) {
+      hints.push(this.AddHint());
+    }
+    this.expectSymbol("*");
+    this.expectSymbol("/");
+    return { type: "TableHints", hints };
   }
 
   SqlSelectKeywords() {
@@ -2350,7 +2366,19 @@ class CalciteParser {
   }
 
   AddHint() {
-    return this.notImplemented("AddHint");
+    const name = this.SimpleIdentifier();
+    let args = null;
+    if (this.acceptSymbol("(")) {
+      args = [];
+      if (!this.isSymbol(")")) {
+        args.push(this.Literal());
+        while (this.acceptSymbol(",")) {
+          args.push(this.Literal());
+        }
+      }
+      this.expectSymbol(")");
+    }
+    return { type: "AddHint", name, args };
   }
 
   Default() {
