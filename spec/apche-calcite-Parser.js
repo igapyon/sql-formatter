@@ -1801,6 +1801,10 @@ class CalciteParser {
     return this.notImplemented("ParenthesizedKeyValueOptionCommaList");
   }
 
+  Where() {
+    return this.notImplemented("Where");
+  }
+
   GroupBy() {
     return this.notImplemented("GroupBy");
   }
@@ -2232,23 +2236,100 @@ class CalciteParser {
   }
 
   PatternExpression() {
-    return this.notImplemented("PatternExpression");
+    let left = this.PatternTerm();
+    const terms = [left];
+    while (this.acceptSymbol("|")) {
+      terms.push(this.PatternTerm());
+    }
+    return { type: "PatternExpression", terms };
   }
 
   PatternTerm() {
-    return this.notImplemented("PatternTerm");
+    const factors = [];
+    while (true) {
+      const save = this.pos;
+      try {
+        const f = this.PatternFactor();
+        if (!f) {
+          this.pos = save;
+          break;
+        }
+        factors.push(f);
+      } catch {
+        this.pos = save;
+        break;
+      }
+    }
+    return { type: "PatternTerm", factors };
   }
 
   PatternFactor() {
-    return this.notImplemented("PatternFactor");
+    const primary = this.PatternPrimary();
+    let quantifier = null;
+    if (this.acceptSymbol("*")) quantifier = { kind: "*" };
+    else if (this.acceptSymbol("+")) quantifier = { kind: "+" };
+    else if (this.acceptSymbol("?")) quantifier = { kind: "?" };
+    else if (this.acceptSymbol("{")) {
+      if (this.acceptSymbol(",")) {
+        const max = this.UnsignedNumericLiteral();
+        this.expectSymbol("}");
+        quantifier = { kind: "range", min: null, max };
+      } else {
+        const min = this.UnsignedNumericLiteral();
+        let max = null;
+        if (this.acceptSymbol(",")) {
+          if (!this.isSymbol("}")) {
+            max = this.UnsignedNumericLiteral();
+          }
+        }
+        this.expectSymbol("}");
+        quantifier = { kind: "range", min, max };
+      }
+    } else if (this.acceptSymbol("{")) {
+      this.expectSymbol("-");
+      const expr = this.PatternExpression();
+      this.expectSymbol("-");
+      this.expectSymbol("}");
+      quantifier = { kind: "group", expr };
+    }
+    let reluctant = false;
+    if (this.acceptSymbol("?")) reluctant = true;
+    return { type: "PatternFactor", primary, quantifier, reluctant };
   }
 
   PatternPrimary() {
+    if (this.peek().type === "IDENT") {
+      return { type: "PatternPrimary", kind: "IDENT", value: this.SimpleIdentifier() };
+    }
+    if (this.acceptSymbol("(")) {
+      const expr = this.PatternExpression();
+      this.expectSymbol(")");
+      return { type: "PatternPrimary", kind: "GROUP", expr };
+    }
+    if (this.acceptSymbol("{")) {
+      this.expectSymbol("-");
+      const expr = this.PatternExpression();
+      this.expectSymbol("-");
+      this.expectSymbol("}");
+      return { type: "PatternPrimary", kind: "NEGATED", expr };
+    }
+    if (this.acceptKeyword("PERMUTE")) {
+      this.expectSymbol("(");
+      const exprs = [this.PatternExpression()];
+      while (this.acceptSymbol(",")) {
+        exprs.push(this.PatternExpression());
+      }
+      this.expectSymbol(")");
+      return { type: "PatternPrimary", kind: "PERMUTE", exprs };
+    }
     return this.notImplemented("PatternPrimary");
   }
 
   PatternDefinition() {
-    return this.notImplemented("PatternDefinition");
+    const name = this.SimpleIdentifier();
+    this.expectKeyword("AS");
+    const expr = this.Expression();
+    return { type: "PatternDefinition", name, expr };
   }
 
   StringLiteral() {
@@ -2670,7 +2751,11 @@ class CalciteParser {
   }
 
   PatternDefinitionCommaList() {
-    return this.notImplemented("PatternDefinitionCommaList");
+    const items = [this.PatternDefinition()];
+    while (this.acceptSymbol(",")) {
+      items.push(this.PatternDefinition());
+    }
+    return { type: "PatternDefinitionCommaList", items };
   }
 
   Natural() {
