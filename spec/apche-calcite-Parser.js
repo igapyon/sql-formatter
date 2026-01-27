@@ -3164,14 +3164,14 @@ class CalciteParser {
     if (this.isKeyword("PREV") || this.isKeyword("NEXT")) {
       return this.MatchRecognizeNavigationPhysical();
     }
-    return this.notImplemented("MatchRecognizeFunctionCall");
+    return null;
   }
 
   MatchRecognizeCallWithModifier() {
     let modifier;
     if (this.acceptKeyword("RUNNING")) modifier = "RUNNING";
     else if (this.acceptKeyword("FINAL")) modifier = "FINAL";
-    else return this.notImplemented("MatchRecognizeCallWithModifier");
+    else return null;
     const call = this.NamedFunctionCall();
     return { type: "MatchRecognizeCallWithModifier", modifier, call };
   }
@@ -3183,7 +3183,7 @@ class CalciteParser {
     let which;
     if (this.acceptKeyword("FIRST")) which = "FIRST";
     else if (this.acceptKeyword("LAST")) which = "LAST";
-    else return this.notImplemented("MatchRecognizeNavigationLogical");
+    else return null;
     this.expectSymbol("(");
     const expr = this.Expression();
     let num = null;
@@ -3198,7 +3198,7 @@ class CalciteParser {
     let which;
     if (this.acceptKeyword("PREV")) which = "PREV";
     else if (this.acceptKeyword("NEXT")) which = "NEXT";
-    else return this.notImplemented("MatchRecognizeNavigationPhysical");
+    else return null;
     this.expectSymbol("(");
     const expr = this.Expression();
     let num = null;
