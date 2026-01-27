@@ -2,32 +2,24 @@
 
 ## 進捗サマリ
 - Stage 1: lexer + 全 production skeleton 済み。
-- 入口系と最小パース済み: SqlStmtList/SqlStmt/OrderedQueryOrExpr/QueryOrExpr/OrderByLimitOpt/LeafQueryOrExpr/LeafQuery/SqlSelect/SelectExpression/OrderBy/OrderItemList/WithList。
-- 式の核を最低限実装: Expression/Expression2(簡易) + AddExpression2b + Identifier/CompoundIdentifier + Literal/Number/String + ParenthesizedExpression + ExpressionCommaList。
+- 入口/Select/From/Join/式/関数/型/JSON/日付系の主要骨格は実装済み。
+- md⇔js の production 名・順序は一致済み（ヘルパー除外で一致）。
 
-## 残り作業（優先順の目安）
-1. Expression2 拡張
-   - IN / BETWEEN / LIKE / ILIKE / RLIKE / SIMILAR TO / IS (NULL/TRUE/FALSE/UNKNOWN/...) / EXISTS / UNIQUE などの分岐。
-   - SOME/ANY/ALL + comp などの集合比較。
-   - ItemAccess（[ OFFSET/ORDINAL/... ]）や PostfixRowOperator。
-2. Expression3/AtomicRowExpression 拡張
-   - ROW/() 構文、LambdaExpression、CursorExpression。
-   - CaseExpression、DynamicParam、ContextVariable、CompoundIdentifier 以外の分岐。
-3. 関数呼び出し系
-   - NamedRoutineCall / NamedFunctionCall / BuiltinFunctionCall / JdbcFunctionCall。
-   - FunctionParameterList / AllOrDistinct / AddArg0/AddArg。
-4. リテラル/型
-   - DateTimeLiteral / IntervalLiteral / IntervalQualifier / SpecialLiteral 等。
-   - DataType 系（CharacterTypeName/RowTypeName/MapTypeName...）。
-5. FROM/Join/テーブル参照
-   - TableRef/Join/JoinType/JoinTable/ImplicitTableFunctionCallArgs など。
-   - Pivot/Unpivot/MatchRecognize/Tablesample/Snapshot/Extend。
-6. クエリ拡張
-   - SetOp/Query/SqlQueryEof/OrderByOfSetSemanticsTable 等。
-7. ユーティリティ補完
-   - SimpleIdentifierOrList/ParenthesizedSimpleIdentifierList/ParenthesizedCompoundIdentifierList 等の list 生成。
-   - Add* 系 production の本実装。
-8. 厳格な突合（最終）
+## 残り作業（優先順の目安・更新）
+1. SetOp/Query 周り
+   - AddSetOpQuery / BinaryQueryOperator / AddSetOpQueryOrExpr / Query / SqlQueryEof
+   - PartitionedQueryOrQueryOrExpr / OrderByOfSetSemanticsTable
+2. テーブル参照の拡張
+   - Snapshot / Tablesample / Pivot / Unpivot / MatchRecognize / TableOverOpt / Over / ExtendedTableRef
+3. LIMIT/OFFSET/FETCH と ORDER BY 制約
+   - LimitClause / OffsetClause / FetchClause
+4. Add* 系の実装（実用上の肝）
+   - AddSelectItem / AddOrderItem / AddGroupingElement / AddWindowSpec / AddWithItem など
+5. DDL/DML の細部
+   - SqlSetOption/SqlAlter/SqlExplain などの分岐網羅（現状は最小実装）
+6. 低優先ユーティリティ
+   - ReservedFunctionName / NonReserved* / CollectionsTypeName / CollateClause など
+7. 厳格な突合（最終）
    - apche-calcite-Parser.md を正とし、apche-calcite-Parser.js の整合を最終チェック。
    - 手順（最小）:
      1) .md から production 名一覧を抽出（順序付き）
@@ -44,3 +36,21 @@
 - lexer は最小: IDENT/NUMBER/STRING/SYMBOL/EOF のみ。予約語判定は isKeyword で大文字比較。
 - AST 形式は自由だが、既存の軽量ノード（type + 必要最小限のフィールド）で統一。
 - 失敗時は notImplemented を残して段階的に埋める。
+
+## 未実装一覧（notImplemented が残るもの）
+SqlSetOption / SqlAlter / SqlExplain / ExplainDetailLevel / SqlInsert / Where / LeafQuery / ExplicitTable / TableConstructor / RowConstructor /
+WindowRange / LimitClause / OffsetClause / FetchClause / JoinType / TableRef1 / TableRef2 / Snapshot / Tablesample / Pivot / Unpivot / MatchRecognize /
+BinaryRowOperator / BinaryMultisetOperator / PostfixRowOperator / AtomicRowExpression / BuiltinFunctionCall / JsonExistsErrorBehavior /
+JsonQueryWrapperBehavior / Literal / NonIntervalLiteral / SpecialLiteral / IntervalQualifierStart / AddSetOpQuery / BinaryQueryOperator /
+AddSetOpQueryOrExpr / Query / SqlQueryEof / ExprOrJoinOrOrderedQuery / ParenthesizedQueryOrCommaList / ParenthesizedQueryOrCommaListWithDefault /
+SimpleIdentifierOrListOrEmpty / SimpleIdentifierFromStringLiteral / SqlSelectKeywords / ParenthesizedLiteralOptionCommaList /
+ParenthesizedKeyValueOptionCommaList / TableOverOpt / Over / ExtendedTableRef / AddExpression / AddExpressions / AddGroupingElement / AddWindowSpec /
+AddWithItem / AddSelectItem / AddRowConstructor / AddSimpleIdentifiers / AddIdentifierSegment / AddTableIdentifierSegment / AddOrderItem /
+AddMeasureColumn / AddSubsetDefinition / AddPivotAgg / AddPivotValue / AddUnpivotValue / AddKeyValueOption / AddOptionValue /
+AddCompoundIdentifierTypes / Default / TableParam / PartitionedQueryOrQueryOrExpr / PartitionedByAndOrderBy / OrderByOfSetSemanticsTable /
+ReservedFunctionName / NonReservedJdbcFunctionName / NonReservedKeyWord / NonReservedKeyWord0of3 / NonReservedKeyWord1of3 / NonReservedKeyWord2of3 /
+StringAggFunctionCall / PercentileFunctionCall / GroupByWindowingCall / MatchRecognizeFunctionCall / MatchRecognizeCallWithModifier /
+MatchRecognizeNavigationLogical / MatchRecognizeNavigationPhysical / NullTreatment / DynamicParam / ContextVariable / SequenceExpression /
+PatternPrimary / weekdayName / Year / Quarter / Month / Week / Day / Hour / Minute / Second / IntervalWithoutQualifier / JsonNameAndValue /
+JsonArrayAggOrderByClause / FloorCeilOptions / StandardFloorCeilOptions / JdbcOdbcDataTypeName / JdbcOdbcDataType / CollectionsTypeName /
+CollateClause / UnusedExtension / MeasureColumnCommaList / SubsetDefinitionCommaList / Natural / Scope / comp / periodOperator
