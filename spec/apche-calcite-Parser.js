@@ -1026,47 +1026,128 @@ class CalciteParser {
   }
 
   DataType() {
-    return this.notImplemented("DataType");
+    const name = this.TypeName();
+    const suffixes = [];
+    while (this.acceptKeyword("MULTISET") || this.acceptKeyword("ARRAY")) {
+      suffixes.push(this.tokens[this.pos - 1].value.toUpperCase());
+    }
+    return { type: "DataType", name, suffixes };
   }
 
   TypeName() {
-    return this.notImplemented("TypeName");
+    if (this.isKeyword("ROW")) return this.RowTypeName();
+    if (this.isKeyword("MAP")) return this.MapTypeName();
+    const sql = this.SqlTypeName();
+    if (sql) return sql;
+    return this.CompoundIdentifier();
   }
 
   SqlTypeName() {
-    return this.notImplemented("SqlTypeName");
+    return this.SqlTypeName1() || this.SqlTypeName2() || this.SqlTypeName3() ||
+      this.CharacterTypeName() || this.DateTimeTypeName();
   }
 
   SqlTypeName1() {
-    return this.notImplemented("SqlTypeName1");
+    if (this.acceptKeyword("GEOMETRY")) return { type: "SqlTypeName", name: "GEOMETRY" };
+    if (this.acceptKeyword("BOOLEAN")) return { type: "SqlTypeName", name: "BOOLEAN" };
+    return null;
   }
 
   SqlTypeName2() {
-    return this.notImplemented("SqlTypeName2");
+    if (this.acceptKeyword("BINARY")) {
+      const varying = Boolean(this.acceptKeyword("VARYING"));
+      const precision = this.PrecisionOpt();
+      return { type: "SqlTypeName", name: "BINARY", varying, precision };
+    }
+    if (this.acceptKeyword("VARBINARY")) {
+      const precision = this.PrecisionOpt();
+      return { type: "SqlTypeName", name: "VARBINARY", precision };
+    }
+    return null;
   }
 
   SqlTypeName3() {
-    return this.notImplemented("SqlTypeName3");
+    if (this.acceptKeyword("DECIMAL") || this.acceptKeyword("DEC") || this.acceptKeyword("NUMERIC") || this.acceptKeyword("ANY")) {
+      const name = String(this.tokens[this.pos - 1].value).toUpperCase();
+      let precision = null;
+      let scale = null;
+      if (this.acceptSymbol("(")) {
+        precision = this.UnsignedIntLiteral();
+        if (this.acceptSymbol(",")) {
+          scale = this.IntLiteral();
+        }
+        this.expectSymbol(")");
+      }
+      return { type: "SqlTypeName", name, precision, scale };
+    }
+    return null;
   }
 
   CharacterTypeName() {
-    return this.notImplemented("CharacterTypeName");
+    if (this.acceptKeyword("CHARACTER") || this.acceptKeyword("CHAR")) {
+      const name = String(this.tokens[this.pos - 1].value).toUpperCase();
+      const varying = Boolean(this.acceptKeyword("VARYING"));
+      const precision = this.PrecisionOpt();
+      return { type: "SqlTypeName", name, varying, precision };
+    }
+    if (this.acceptKeyword("VARCHAR")) {
+      const precision = this.PrecisionOpt();
+      return { type: "SqlTypeName", name: "VARCHAR", precision };
+    }
+    return null;
   }
 
   DateTimeTypeName() {
-    return this.notImplemented("DateTimeTypeName");
+    if (this.acceptKeyword("DATE")) {
+      return { type: "SqlTypeName", name: "DATE" };
+    }
+    if (this.acceptKeyword("TIME")) {
+      const precision = this.PrecisionOpt();
+      const timeZone = this.TimeZoneOpt();
+      return { type: "SqlTypeName", name: "TIME", precision, timeZone };
+    }
+    if (this.acceptKeyword("TIMESTAMP")) {
+      const precision = this.PrecisionOpt();
+      const timeZone = this.TimeZoneOpt();
+      return { type: "SqlTypeName", name: "TIMESTAMP", precision, timeZone };
+    }
+    return null;
   }
 
   TimeZoneOpt() {
-    return this.notImplemented("TimeZoneOpt");
+    if (!this.acceptKeyword("WITH")) return null;
+    const local = Boolean(this.acceptKeyword("LOCAL"));
+    this.expectKeyword("TIME");
+    this.expectKeyword("ZONE");
+    return { type: "TimeZoneOpt", local };
   }
 
   RowTypeName() {
-    return this.notImplemented("RowTypeName");
+    this.expectKeyword("ROW");
+    this.expectSymbol("(");
+    const fields = [];
+    const name = this.SimpleIdentifier();
+    const type = this.DataType();
+    const nullable = this.NullableOptDefaultTrue();
+    fields.push({ name, type, nullable });
+    while (this.acceptSymbol(",")) {
+      const n = this.SimpleIdentifier();
+      const t = this.DataType();
+      const nn = this.NullableOptDefaultTrue();
+      fields.push({ name: n, type: t, nullable: nn });
+    }
+    this.expectSymbol(")");
+    return { type: "RowTypeName", fields };
   }
 
   MapTypeName() {
-    return this.notImplemented("MapTypeName");
+    this.expectKeyword("MAP");
+    this.expectSymbol("<");
+    const keyType = this.DataType();
+    this.expectSymbol(",");
+    const valueType = this.DataType();
+    this.expectSymbol(">");
+    return { type: "MapTypeName", keyType, valueType };
   }
 
   Literal() {
@@ -1077,47 +1158,105 @@ class CalciteParser {
   }
 
   LiteralOrIntervalExpression() {
-    return this.Literal();
+    if (this.isKeyword("INTERVAL")) {
+      return this.IntervalLiteralOrExpression();
+    }
+    return this.NonIntervalLiteral();
   }
 
   IntervalLiteralOrExpression() {
-    return this.notImplemented("IntervalLiteralOrExpression");
+    this.expectKeyword("INTERVAL");
+    let sign = null;
+    if (this.acceptSymbol("+")) sign = "+";
+    else if (this.acceptSymbol("-")) sign = "-";
+    if (this.peek().type === "STRING") {
+      const literal = this.SimpleStringLiteral();
+      const qualifier = this.IntervalQualifier();
+      return { type: "IntervalLiteralOrExpression", sign, literal, qualifier };
+    }
+    let value;
+    if (this.acceptSymbol("(")) {
+      value = this.Expression();
+      this.expectSymbol(")");
+    } else if (this.peek().type === "NUMBER") {
+      value = this.UnsignedNumericLiteral();
+    } else {
+      value = this.CompoundIdentifier();
+    }
+    const qualifier = this.IntervalQualifierStart();
+    return { type: "IntervalLiteralOrExpression", sign, value, qualifier };
   }
 
   NonIntervalLiteral() {
+    if (this.peek().type === "NUMBER") return this.NumericLiteral();
+    if (this.peek().type === "STRING") return this.StringLiteral();
+    if (this.isKeyword("TRUE") || this.isKeyword("FALSE") || this.isKeyword("UNKNOWN") || this.isKeyword("NULL")) {
+      return this.SpecialLiteral();
+    }
+    if (this.isSymbol("{")) return this.DateTimeLiteral();
     return this.notImplemented("NonIntervalLiteral");
   }
 
   NumericLiteral() {
-    const t = this.peek();
-    if (t.type !== "NUMBER") {
-      throw new Error(`Expected number but got ${t.type}:${t.value}`);
-    }
-    this.next();
-    return { type: "NumericLiteral", value: t.value };
+    let sign = null;
+    if (this.acceptSymbol("+")) sign = "+";
+    else if (this.acceptSymbol("-")) sign = "-";
+    const value = this.UnsignedNumericLiteral();
+    return { type: "NumericLiteral", sign, value };
   }
 
   UnsignedNumericLiteral() {
-    return this.notImplemented("UnsignedNumericLiteral");
+    const t = this.peek();
+    if (t.type !== "NUMBER") {
+      throw new Error(`Expected unsigned numeric literal but got ${t.type}:${t.value}`);
+    }
+    this.next();
+    return { type: "UnsignedNumericLiteral", value: t.value };
   }
 
   SpecialLiteral() {
+    if (this.acceptKeyword("TRUE")) return { type: "SpecialLiteral", value: "TRUE" };
+    if (this.acceptKeyword("FALSE")) return { type: "SpecialLiteral", value: "FALSE" };
+    if (this.acceptKeyword("UNKNOWN")) return { type: "SpecialLiteral", value: "UNKNOWN" };
+    if (this.acceptKeyword("NULL")) return { type: "SpecialLiteral", value: "NULL" };
     return this.notImplemented("SpecialLiteral");
   }
 
   DateTimeLiteral() {
-    return this.notImplemented("DateTimeLiteral");
+    this.expectSymbol("{");
+    const kindToken = this.peek();
+    if (kindToken.type !== "IDENT") {
+      throw new Error(`Expected datetime literal kind but got ${kindToken.type}:${kindToken.value}`);
+    }
+    const kind = String(kindToken.value).toLowerCase();
+    if (kind !== "d" && kind !== "t" && kind !== "ts") {
+      throw new Error(`Expected d|t|ts but got ${kindToken.value}`);
+    }
+    this.next();
+    const value = this.StringLiteral();
+    this.expectSymbol("}");
+    return { type: "DateTimeLiteral", kind, value };
   }
 
   IntervalLiteral() {
-    return this.notImplemented("IntervalLiteral");
+    this.expectKeyword("INTERVAL");
+    let sign = null;
+    if (this.acceptSymbol("+")) sign = "+";
+    else if (this.acceptSymbol("-")) sign = "-";
+    const literal = this.SimpleStringLiteral();
+    const qualifier = this.IntervalQualifier();
+    return { type: "IntervalLiteral", sign, literal, qualifier };
   }
 
   IntervalQualifier() {
-    return this.notImplemented("IntervalQualifier");
+    return this.IntervalQualifierStart();
   }
 
   IntervalQualifierStart() {
+    const units = ["YEAR", "QUARTER", "MONTH", "WEEK", "DAY", "HOUR", "MINUTE", "SECOND"];
+    for (const u of units) {
+      if (this.acceptKeyword(u)) return { type: "IntervalQualifier", unit: u };
+    }
     return this.notImplemented("IntervalQualifierStart");
   }
 
@@ -1703,7 +1842,7 @@ class CalciteParser {
   }
 
   SimpleStringLiteral() {
-    return this.notImplemented("SimpleStringLiteral");
+    return this.StringLiteral();
   }
 
   UnsignedIntLiteral() {
@@ -1716,11 +1855,18 @@ class CalciteParser {
   }
 
   IntLiteral() {
-    return this.notImplemented("IntLiteral");
+    let sign = null;
+    if (this.acceptSymbol("+")) sign = "+";
+    else if (this.acceptSymbol("-")) sign = "-";
+    const value = this.UnsignedIntLiteral();
+    return { type: "IntLiteral", sign, value };
   }
 
   UnsignedNumericLiteralOrParam() {
-    return this.notImplemented("UnsignedNumericLiteralOrParam");
+    if (this.isSymbol("?") || (this.isSymbol(":") && this.peekN(1).type === "NUMBER")) {
+      return this.DynamicParam();
+    }
+    return this.UnsignedNumericLiteral();
   }
 
   TimeUnitOrName() {
@@ -1826,15 +1972,32 @@ class CalciteParser {
   }
 
   PrecisionOpt() {
-    return this.notImplemented("PrecisionOpt");
+    if (!this.acceptSymbol("(")) return null;
+    const value = this.UnsignedIntLiteral();
+    this.expectSymbol(")");
+    return { type: "Precision", value };
   }
 
   NullableOptDefaultTrue() {
-    return this.notImplemented("NullableOptDefaultTrue");
+    if (this.acceptKeyword("NOT")) {
+      this.expectKeyword("NULL");
+      return false;
+    }
+    if (this.acceptKeyword("NULL")) {
+      return true;
+    }
+    return true;
   }
 
   NullableOptDefaultFalse() {
-    return this.notImplemented("NullableOptDefaultFalse");
+    if (this.acceptKeyword("NOT")) {
+      this.expectKeyword("NULL");
+      return false;
+    }
+    if (this.acceptKeyword("NULL")) {
+      return true;
+    }
+    return false;
   }
 
   JsonArrayAggOrderByClause() {
