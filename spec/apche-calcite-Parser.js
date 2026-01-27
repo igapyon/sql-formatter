@@ -1125,6 +1125,19 @@ class CalciteParser {
       this.expectSymbol(")");
       return { type: "BuiltinFunctionCall", keyword: "TRIM", spec, trimChar, from };
     }
+    if (this.isKeyword("DATE") || this.isKeyword("TIME") || this.isKeyword("DATETIME") || this.isKeyword("TIMESTAMP")) {
+      return this.DateTimeConstructorCall();
+    }
+    if (this.isKeyword("DATE_DIFF")) return this.DateDiffFunctionCall();
+    if (this.isKeyword("TIMESTAMPADD")) return this.TimestampAddFunctionCall();
+    if (this.isKeyword("TIMESTAMPDIFF")) return this.TimestampDiffFunctionCall();
+    if (this.isKeyword("TIMESTAMP_DIFF")) return this.TimestampDiff3FunctionCall();
+    if (this.isKeyword("DATETIME_DIFF")) return this.DatetimeDiffFunctionCall();
+    if (this.isKeyword("DATE_TRUNC")) return this.DateTruncFunctionCall();
+    if (this.isKeyword("DATETIME_TRUNC")) return this.DatetimeTruncFunctionCall();
+    if (this.isKeyword("TIMESTAMP_TRUNC")) return this.TimestampTruncFunctionCall();
+    if (this.isKeyword("TIME_DIFF")) return this.TimeDiffFunctionCall();
+    if (this.isKeyword("TIME_TRUNC")) return this.TimeTruncFunctionCall();
     if (this.isKeyword("CONTAINS_SUBSTR")) {
       return this.ContainsSubstrFunctionCall();
     }
@@ -2503,47 +2516,121 @@ class CalciteParser {
   }
 
   DateDiffFunctionCall() {
-    return this.notImplemented("DateDiffFunctionCall");
+    this.expectKeyword("DATE_DIFF");
+    this.expectSymbol("(");
+    const left = this.Expression();
+    this.expectSymbol(",");
+    const right = this.Expression();
+    this.expectSymbol(",");
+    const unit = this.TimeUnitOrName();
+    this.expectSymbol(")");
+    return { type: "DateDiffFunctionCall", left, right, unit };
   }
 
   TimestampAddFunctionCall() {
-    return this.notImplemented("TimestampAddFunctionCall");
+    this.expectKeyword("TIMESTAMPADD");
+    this.expectSymbol("(");
+    const unit = this.TimeUnitOrName();
+    this.expectSymbol(",");
+    const interval = this.Expression();
+    this.expectSymbol(",");
+    const ts = this.Expression();
+    this.expectSymbol(")");
+    return { type: "TimestampAddFunctionCall", unit, interval, ts };
   }
 
   TimestampDiffFunctionCall() {
-    return this.notImplemented("TimestampDiffFunctionCall");
+    this.expectKeyword("TIMESTAMPDIFF");
+    this.expectSymbol("(");
+    const unit = this.TimeUnitOrName();
+    this.expectSymbol(",");
+    const left = this.Expression();
+    this.expectSymbol(",");
+    const right = this.Expression();
+    this.expectSymbol(")");
+    return { type: "TimestampDiffFunctionCall", unit, left, right };
   }
 
   TimestampDiff3FunctionCall() {
-    return this.notImplemented("TimestampDiff3FunctionCall");
+    this.expectKeyword("TIMESTAMP_DIFF");
+    this.expectSymbol("(");
+    const left = this.Expression();
+    this.expectSymbol(",");
+    const right = this.Expression();
+    this.expectSymbol(",");
+    const unit = this.TimeUnitOrName();
+    this.expectSymbol(")");
+    return { type: "TimestampDiff3FunctionCall", left, right, unit };
   }
 
   DatetimeDiffFunctionCall() {
-    return this.notImplemented("DatetimeDiffFunctionCall");
+    this.expectKeyword("DATETIME_DIFF");
+    this.expectSymbol("(");
+    const left = this.Expression();
+    this.expectSymbol(",");
+    const right = this.Expression();
+    this.expectSymbol(",");
+    const unit = this.TimeUnitOrName();
+    this.expectSymbol(")");
+    return { type: "DatetimeDiffFunctionCall", left, right, unit };
   }
 
   DateTruncFunctionCall() {
-    return this.notImplemented("DateTruncFunctionCall");
+    this.expectKeyword("DATE_TRUNC");
+    this.expectSymbol("(");
+    const expr = this.Expression();
+    this.expectSymbol(",");
+    const unit = this.TimeUnitOrName();
+    this.expectSymbol(")");
+    return { type: "DateTruncFunctionCall", expr, unit };
   }
 
   DatetimeTruncFunctionCall() {
-    return this.notImplemented("DatetimeTruncFunctionCall");
+    this.expectKeyword("DATETIME_TRUNC");
+    this.expectSymbol("(");
+    const expr = this.Expression();
+    this.expectSymbol(",");
+    const unit = this.TimeUnitOrName();
+    this.expectSymbol(")");
+    return { type: "DatetimeTruncFunctionCall", expr, unit };
   }
 
   TimestampTruncFunctionCall() {
-    return this.notImplemented("TimestampTruncFunctionCall");
+    this.expectKeyword("TIMESTAMP_TRUNC");
+    this.expectSymbol("(");
+    const expr = this.Expression();
+    this.expectSymbol(",");
+    const unit = this.TimeUnitOrName();
+    this.expectSymbol(")");
+    return { type: "TimestampTruncFunctionCall", expr, unit };
   }
 
   TimeDiffFunctionCall() {
-    return this.notImplemented("TimeDiffFunctionCall");
+    this.expectKeyword("TIME_DIFF");
+    this.expectSymbol("(");
+    const left = this.Expression();
+    this.expectSymbol(",");
+    const right = this.Expression();
+    this.expectSymbol(",");
+    const unit = this.TimeUnitOrName();
+    this.expectSymbol(")");
+    return { type: "TimeDiffFunctionCall", left, right, unit };
   }
 
   TimeTruncFunctionCall() {
-    return this.notImplemented("TimeTruncFunctionCall");
+    this.expectKeyword("TIME_TRUNC");
+    this.expectSymbol("(");
+    const expr = this.Expression();
+    this.expectSymbol(",");
+    const unit = this.TimeUnitOrName();
+    this.expectSymbol(")");
+    return { type: "TimeTruncFunctionCall", expr, unit };
   }
 
   DateTimeConstructorCall() {
-    return this.notImplemented("DateTimeConstructorCall");
+    const keyword = String(this.next().value).toUpperCase();
+    const params = this.FunctionParameterList();
+    return { type: "DateTimeConstructorCall", keyword, params };
   }
 
   FloorCeilOptions() {
