@@ -791,15 +791,45 @@ class CalciteParser {
   }
 
   LimitClause() {
-    return this.notImplemented("LimitClause");
+    this.expectKeyword("LIMIT");
+    let value = null;
+    let offset = null;
+    if (this.isSymbol(",")) {
+      // LIMIT , offset not allowed; keep for strictness
+    }
+    const first = this.acceptKeyword("ALL") ? { type: "Keyword", value: "ALL" } : this.UnsignedNumericLiteralOrParam();
+    if (this.acceptSymbol(",")) {
+      const second = this.acceptKeyword("ALL") ? { type: "Keyword", value: "ALL" } : this.UnsignedNumericLiteralOrParam();
+      offset = first;
+      value = second;
+    } else {
+      value = first;
+    }
+    return { type: "LimitClause", value, offset };
   }
 
   OffsetClause() {
-    return this.notImplemented("OffsetClause");
+    this.expectKeyword("OFFSET");
+    const value = this.UnsignedNumericLiteralOrParam();
+    let rows = null;
+    if (this.acceptKeyword("ROW")) rows = "ROW";
+    else if (this.acceptKeyword("ROWS")) rows = "ROWS";
+    return { type: "OffsetClause", value, rows };
   }
 
   FetchClause() {
-    return this.notImplemented("FetchClause");
+    this.expectKeyword("FETCH");
+    let mode;
+    if (this.acceptKeyword("FIRST")) mode = "FIRST";
+    else if (this.acceptKeyword("NEXT")) mode = "NEXT";
+    else return this.notImplemented("FetchClause");
+    const value = this.UnsignedNumericLiteralOrParam();
+    let rows;
+    if (this.acceptKeyword("ROW")) rows = "ROW";
+    else if (this.acceptKeyword("ROWS")) rows = "ROWS";
+    else return this.notImplemented("FetchClause");
+    this.expectKeyword("ONLY");
+    return { type: "FetchClause", mode, value, rows };
   }
 
   FromClause() {
