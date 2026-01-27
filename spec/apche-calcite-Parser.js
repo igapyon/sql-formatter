@@ -268,7 +268,7 @@ class CalciteParser {
       const name = this.CompoundIdentifier();
       return { type: "SqlSetOption", kind: "RESET", name };
     }
-    return this.notImplemented("SqlSetOption");
+    throw new Error("Invalid SqlSetOption");
   }
 
   SqlAlter() {
@@ -276,7 +276,7 @@ class CalciteParser {
     let scope;
     if (this.acceptKeyword("SYSTEM")) scope = "SYSTEM";
     else if (this.acceptKeyword("SESSION")) scope = "SESSION";
-    else return this.notImplemented("SqlAlter");
+    else throw new Error("Invalid SqlAlter");
     const option = this.SqlSetOption();
     return { type: "SqlAlter", scope, option };
   }
@@ -297,7 +297,7 @@ class CalciteParser {
       if (this.acceptKeyword("XML")) format = "XML";
       else if (this.acceptKeyword("JSON")) format = "JSON";
       else if (this.acceptKeyword("DOT")) format = "DOT";
-      else return this.notImplemented("SqlExplain");
+      else throw new Error("Invalid SqlExplain format");
     }
     this.expectKeyword("FOR");
     const stmt = this.SqlQueryOrDml();
@@ -308,7 +308,7 @@ class CalciteParser {
     let mode;
     if (this.acceptKeyword("EXCLUDING")) mode = "EXCLUDING";
     else if (this.acceptKeyword("INCLUDING")) mode = "INCLUDING";
-    else return this.notImplemented("ExplainDetailLevel");
+    else throw new Error("Invalid ExplainDetailLevel");
     let all = false;
     if (this.acceptKeyword("ALL")) all = true;
     this.expectKeyword("ATTRIBUTES");
@@ -1177,6 +1177,18 @@ class CalciteParser {
   Expression2() {
     let left = this.AddExpression2b();
     while (true) {
+      // BinaryRowOperator
+      {
+        const save = this.pos;
+        try {
+          const opNode = this.BinaryRowOperator();
+          const right = this.AddExpression2b();
+          left = { type: "BinaryExpression", operator: opNode, left, right };
+          continue;
+        } catch {
+          this.pos = save;
+        }
+      }
       // [NOT] IN
       if ((this.isKeyword("IN")) || (this.isKeyword("NOT") && this.isKeywordAt("IN", 1))) {
         const not = Boolean(this.acceptKeyword("NOT"));
@@ -1323,11 +1335,63 @@ class CalciteParser {
   }
 
   BinaryRowOperator() {
+    const t = this.peek();
+    if (t.type === "SYMBOL") {
+      const op = t.value;
+      const ops = ["=", "<<", ">", "<", "<=", ">=", "<>", "!=", "+", "-", "*", "/", "%", "||", "^", "&"];
+      if (ops.includes(op)) {
+        this.next();
+        return { type: "BinaryRowOperator", op };
+      }
+    }
+    if (this.acceptKeyword("AND")) return { type: "BinaryRowOperator", op: "AND" };
+    if (this.acceptKeyword("OR")) return { type: "BinaryRowOperator", op: "OR" };
+    if (this.acceptKeyword("IS")) {
+      let not = false;
+      if (this.acceptKeyword("NOT")) not = true;
+      this.expectKeyword("DISTINCT");
+      this.expectKeyword("FROM");
+      return { type: "BinaryRowOperator", op: not ? "IS NOT DISTINCT FROM" : "IS DISTINCT FROM" };
+    }
+    if (this.acceptKeyword("MEMBER")) {
+      this.expectKeyword("OF");
+      return { type: "BinaryRowOperator", op: "MEMBER OF" };
+    }
+    if (this.acceptKeyword("SUBMULTISET")) {
+      this.expectKeyword("OF");
+      return { type: "BinaryRowOperator", op: "SUBMULTISET OF" };
+    }
+    if (this.acceptKeyword("NOT")) {
+      if (this.acceptKeyword("SUBMULTISET")) {
+        this.expectKeyword("OF");
+        return { type: "BinaryRowOperator", op: "NOT SUBMULTISET OF" };
+      }
+      return this.notImplemented("BinaryRowOperator");
+    }
+    if (this.acceptKeyword("CONTAINS")) return { type: "BinaryRowOperator", op: "CONTAINS" };
+    if (this.acceptKeyword("OVERLAPS")) return { type: "BinaryRowOperator", op: "OVERLAPS" };
+    if (this.acceptKeyword("EQUALS")) return { type: "BinaryRowOperator", op: "EQUALS" };
+    if (this.acceptKeyword("PRECEDES")) return { type: "BinaryRowOperator", op: "PRECEDES" };
+    if (this.acceptKeyword("SUCCEEDS")) return { type: "BinaryRowOperator", op: "SUCCEEDS" };
+    if (this.acceptKeyword("IMMEDIATELY")) {
+      if (this.acceptKeyword("PRECEDES")) return { type: "BinaryRowOperator", op: "IMMEDIATELY PRECEDES" };
+      if (this.acceptKeyword("SUCCEEDS")) return { type: "BinaryRowOperator", op: "IMMEDIATELY SUCCEEDS" };
+    }
+    const multiset = this.BinaryMultisetOperator();
+    if (multiset) return multiset;
     return this.notImplemented("BinaryRowOperator");
   }
 
   BinaryMultisetOperator() {
-    return this.notImplemented("BinaryMultisetOperator");
+    let kind;
+    if (this.acceptKeyword("UNION")) kind = "UNION";
+    else if (this.acceptKeyword("INTERSECT")) kind = "INTERSECT";
+    else if (this.acceptKeyword("EXCEPT")) kind = "EXCEPT";
+    else return null;
+    let quantifier = null;
+    if (this.acceptKeyword("ALL")) quantifier = "ALL";
+    else if (this.acceptKeyword("DISTINCT")) quantifier = "DISTINCT";
+    return { type: "BinaryMultisetOperator", kind, quantifier };
   }
 
   PrefixRowOperator() {
