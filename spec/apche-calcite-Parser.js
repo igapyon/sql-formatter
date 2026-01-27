@@ -3057,7 +3057,7 @@ class CalciteParser {
   ReservedFunctionName() {
     const name = this.NonReservedJdbcFunctionName();
     if (name) return name;
-    return this.notImplemented("ReservedFunctionName");
+    return null;
   }
 
   NonReservedJdbcFunctionName() {
@@ -3073,7 +3073,7 @@ class CalciteParser {
       const id = this.SimpleIdentifier();
       return { type: "NonReservedKeyWord", value: id };
     }
-    return this.notImplemented("NonReservedKeyWord");
+    return null;
   }
 
   NonReservedKeyWord0of3() {
@@ -3404,7 +3404,7 @@ class CalciteParser {
       this.expectSymbol(")");
       return { type: "PatternPrimary", kind: "PERMUTE", exprs };
     }
-    return this.notImplemented("PatternPrimary");
+    return null;
   }
 
   PatternDefinition() {
@@ -3483,55 +3483,55 @@ class CalciteParser {
     for (const d of days) {
       if (this.acceptKeyword(d)) return { type: "weekdayName", value: d };
     }
-    return this.notImplemented("weekdayName");
+    return null;
   }
 
   Year() {
     if (this.acceptKeyword("YEAR")) return { type: "Year", value: "YEAR" };
     if (this.acceptKeyword("YEARS")) return { type: "Year", value: "YEARS" };
-    return this.notImplemented("Year");
+    return null;
   }
 
   Quarter() {
     if (this.acceptKeyword("QUARTER")) return { type: "Quarter", value: "QUARTER" };
     if (this.acceptKeyword("QUARTERS")) return { type: "Quarter", value: "QUARTERS" };
-    return this.notImplemented("Quarter");
+    return null;
   }
 
   Month() {
     if (this.acceptKeyword("MONTH")) return { type: "Month", value: "MONTH" };
     if (this.acceptKeyword("MONTHS")) return { type: "Month", value: "MONTHS" };
-    return this.notImplemented("Month");
+    return null;
   }
 
   Week() {
     if (this.acceptKeyword("WEEK")) return { type: "Week", value: "WEEK" };
     if (this.acceptKeyword("WEEKS")) return { type: "Week", value: "WEEKS" };
-    return this.notImplemented("Week");
+    return null;
   }
 
   Day() {
     if (this.acceptKeyword("DAY")) return { type: "Day", value: "DAY" };
     if (this.acceptKeyword("DAYS")) return { type: "Day", value: "DAYS" };
-    return this.notImplemented("Day");
+    return null;
   }
 
   Hour() {
     if (this.acceptKeyword("HOUR")) return { type: "Hour", value: "HOUR" };
     if (this.acceptKeyword("HOURS")) return { type: "Hour", value: "HOURS" };
-    return this.notImplemented("Hour");
+    return null;
   }
 
   Minute() {
     if (this.acceptKeyword("MINUTE")) return { type: "Minute", value: "MINUTE" };
     if (this.acceptKeyword("MINUTES")) return { type: "Minute", value: "MINUTES" };
-    return this.notImplemented("Minute");
+    return null;
   }
 
   Second() {
     if (this.acceptKeyword("SECOND")) return { type: "Second", value: "SECOND" };
     if (this.acceptKeyword("SECONDS")) return { type: "Second", value: "SECONDS" };
-    return this.notImplemented("Second");
+    return null;
   }
 
   IntervalWithoutQualifier() {
