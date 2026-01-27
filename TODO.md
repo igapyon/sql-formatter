@@ -38,15 +38,14 @@
 - 失敗時は notImplemented を残して段階的に埋める。
 
 ## 未実装一覧（notImplemented が残るもの）
-SqlSetOption / SqlAlter / SqlExplain / ExplainDetailLevel / SqlInsert / Where / LeafQuery / TableConstructor /
+SqlInsert / Where / LeafQuery / TableConstructor /
 WindowRange / FetchClause / JoinType / Tablesample /
-BinaryRowOperator / BinaryMultisetOperator / PostfixRowOperator / AtomicRowExpression / BuiltinFunctionCall /
+BinaryRowOperator / PostfixRowOperator / AtomicRowExpression / BuiltinFunctionCall /
 JsonExistsErrorBehavior / JsonQueryWrapperBehavior /
 Literal / NonIntervalLiteral / SpecialLiteral / IntervalQualifierStart /
 BinaryQueryOperator /
 SimpleIdentifierOrListOrEmpty /
 SqlSelectKeywords / ParenthesizedLiteralOptionCommaList / ParenthesizedKeyValueOptionCommaList /
-TableOverOpt / Over / ExtendedTableRef /
 AddExpression / AddCompoundIdentifierTypes / Default / TableParam /
 ReservedFunctionName / NonReservedJdbcFunctionName / NonReservedKeyWord / NonReservedKeyWord0of3 / NonReservedKeyWord1of3 / NonReservedKeyWord2of3 /
 StringAggFunctionCall / PercentileFunctionCall / GroupByWindowingCall /
