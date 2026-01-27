@@ -18,6 +18,7 @@ SqlAlter           ::= "ALTER" ( "SYSTEM" | "SESSION" ) SqlSetOption
 SqlExplain         ::= "EXPLAIN" "PLAN" [ ExplainDetailLevel ] [ ExplainDepth ] [ "AS" ( "XML" | "JSON" | "DOT" ) ] "FOR" SqlQueryOrDml
 ExplainDetailLevel ::= ( "EXCLUDING" | "INCLUDING" [ "ALL" ] ) "ATTRIBUTES"
 ExplainDepth       ::= "WITH" "TYPE" | "WITH" "IMPLEMENTATION" | "WITHOUT" "IMPLEMENTATION"
+                     | /* empty (default: PHYSICAL) */
 SqlQueryOrDml      ::= OrderedQueryOrExpr | SqlInsert | SqlDelete | SqlUpdate | SqlMerge
 
 SqlDescribe        ::= "DESCRIBE" ( ( "DATABASE" | "CATALOG" | "SCHEMA" ) CompoundIdentifier
@@ -38,17 +39,26 @@ OrderByLimitOpt    ::= [ OrderBy ]
                        | OffsetClause ( [ LimitClause ] | FetchClause )
                        | FetchClause
                        ]
+LeafQueryOrExpr    ::= LeafQuery | Expression
+LeafQuery          ::= SqlSelect | TableConstructor | ExplicitTable
+ExplicitTable      ::= "TABLE" CompoundIdentifier
+TableConstructor   ::= ( "VALUES" | "VALUE" ) RowConstructor { "," RowConstructor }
+RowConstructor     ::= "(" "ROW" ParenthesizedQueryOrCommaListWithDefault ")"
+                     | [ "ROW" ] ParenthesizedQueryOrCommaListWithDefault
+                     | Expression
 WithClause         ::= "WITH" [ "RECURSIVE" ] WithItem { "," WithItem }
 WithItem           ::= SimpleIdentifier [ "(" SimpleIdentifierList ")" ] "AS" ParenthesizedExpression
 
 SqlSelect          ::= "SELECT" [ Hint ] [ SqlSelectKeywords ] [ "STREAM" ] [ "ALL" | "DISTINCT" ]
                        SelectItem { "," SelectItem }
-                       [ "FROM" FromClause ]
-                       [ "WHERE" Expression ]
-                       [ "GROUP" "BY" [ "DISTINCT" | "ALL" ] GroupingElementList ]
-                       [ "HAVING" Expression ]
-                       [ "WINDOW" WindowDeclaration { "," WindowDeclaration } ]
-                       [ "QUALIFY" Expression ]
+                       ( "FROM" FromClause
+                         [ "WHERE" Expression ]
+                         [ "GROUP" "BY" [ "DISTINCT" | "ALL" ] GroupingElementList ]
+                         [ "HAVING" Expression ]
+                         [ "WINDOW" WindowDeclaration { "," WindowDeclaration } ]
+                         [ "QUALIFY" Expression ]
+                       | /* empty */
+                       )
 
 SelectItem         ::= ( "*" | Expression )
                        [ [ "AS" [ "MEASURE" ] ]
@@ -108,9 +118,8 @@ JoinType           ::= "JOIN" | "INNER" "JOIN"
                      | "ASOF" "JOIN"
 
 JoinTable          ::= [ "NATURAL" ] JoinType TableRef [ JoinCondition ]
-JoinCondition      ::= "ON" Expression 
+JoinCondition      ::= [ "MATCH_CONDITION" Expression ] "ON" Expression  /* ASOF JOINのみ */
                      | "USING" "(" SimpleIdentifierList ")"
-                     | "MATCH_CONDITION" Expression "ON" Expression  /* ASOF JOINのみ */
 
 TableRef           ::= TableRefPrimary
                        [ PivotClause ] [ UnpivotClause ]
@@ -154,8 +163,30 @@ MatchRecognizeClause ::= "MATCH_RECOGNIZE" "("
 
 ```ebnf
 Expression         ::= Expression2
-Expression2        ::= { PrefixRowOperator } Expression3
-                       { ( BinaryRowOperator Expression3 ) | PostfixRowOperator | SpecialRowOperator }
+Expression2        ::= Expression2b
+                       {
+                         InPredicate
+                       | BetweenPredicate
+                       | LikePredicate [ "ESCAPE" Expression3 ]
+                       | BinaryRowOperator Expression2b
+                       | ItemAccess
+                       | PostfixRowOperator
+                       }
+Expression2b       ::= { PrefixRowOperator } Expression3 { "." RowExpressionExtension }
+ComparisonOperator ::= "<" | "<=" | ">" | ">=" | "=" | "<>" | "!="
+
+InPredicate        ::= ( [ "NOT" ] "IN"
+                       | ComparisonOperator ( "SOME" | "ANY" | "ALL" )
+                       )
+                       "(" ( OrderedQueryOrExpr | ExpressionList ) ")"
+BetweenPredicate   ::= [ "NOT" ] "BETWEEN" [ "SYMMETRIC" | "ASYMMETRIC" ] Expression2 "AND" Expression2
+LikePredicate      ::= [ "NOT" ] ( "LIKE" | "ILIKE" | "RLIKE" | "SIMILAR" "TO" ) Expression2
+ItemAccess         ::= "[" ( "OFFSET" | "ORDINAL" | "SAFE_OFFSET" | "SAFE_ORDINAL" )
+                           "(" Expression ")" 
+                         | Expression
+                       "]" { "." SimpleIdentifier }
+RowExpressionExtension ::= SimpleIdentifier
+                        | SimpleIdentifier "(" [ "*" | /* empty */ | FunctionParameterList ] ")"
 
 /* 演算子詳細 */
 BinaryRowOperator  ::= "=" | "<<" | ">" | "<" | "<=" | ">=" | "<>" | "!="
@@ -181,16 +212,13 @@ PostfixRowOperator ::= "IS" [ "NOT" ]
                          )
                      | "FORMAT" JsonRepresentation
 
-SpecialRowOperator ::= [ "NOT" ] "IN" "(" ( OrderedQueryOrExpr | ExpressionList ) ")"
-                     | [ "NOT" ] "BETWEEN" [ "SYMMETRIC" | "ASYMMETRIC" ] Expression2 "AND" Expression2
-                     | [ "NOT" ] ( "LIKE" | "ILIKE" | "RLIKE" | "SIMILAR" "TO" ) Expression2 [ "ESCAPE" Expression3 ]
-
-Expression3        ::= AtomicRowExpression 
-                     | CursorExpression 
-                     | [ "ROW" ] "(" [ "DISTINCT" | "ALL" ] ExpressionList ")" 
+Expression3        ::= AtomicRowExpression
+                     | CursorExpression
+                     | "ROW" "(" OrderedQueryOrExpr | ExpressionList ")"   /* explicit ROW */
+                     | [ "ROW" ] "(" OrderedQueryOrExpr | ExpressionList ")" [ IntervalQualifier ] /* row/paren form */
                      | LambdaExpression
 
-AtomicRowExpression::= Literal | DynamicParam | BuiltinFunctionCall | JdbcFunctionCall 
+AtomicRowExpression::= LiteralOrIntervalExpression | DynamicParam | BuiltinFunctionCall | JdbcFunctionCall 
                      | MultisetConstructor | ArrayConstructor | MapConstructor | PeriodConstructor
                      | NamedFunctionCall | ContextVariable | CompoundIdentifier | "*"
                      | NewSpecification | CaseExpression | SequenceExpression
@@ -290,6 +318,12 @@ RowTypeName        ::= "ROW" "(" SimpleIdentifier DataType [ "NULL" | "NOT" "NUL
 MapTypeName        ::= "MAP" "<" DataType "," DataType ">"
 
 Literal            ::= NonIntervalLiteral | IntervalLiteral
+LiteralOrIntervalExpression ::= IntervalLiteralOrExpression | NonIntervalLiteral
+IntervalLiteralOrExpression ::= "INTERVAL" [ "+" | "-" ]
+                               ( SimpleStringLiteral IntervalQualifier
+                               | ( "(" Expression ")" | UnsignedNumericLiteral | CompoundIdentifier )
+                                 IntervalQualifierStart
+                               )
 NonIntervalLiteral ::= NumericLiteral | StringLiteral | SpecialLiteral | DateTimeLiteral
 NumericLiteral     ::= [ "+" | "-" ] UnsignedNumericLiteral
 UnsignedNumericLiteral ::= UnsignedInteger | DecimalNumeric | DecimalStringLiteral | ApproxNumeric
@@ -311,3 +345,6 @@ IntervalQualifier  ::= ( "YEAR" | "QUARTER" | "MONTH" | "WEEK" | "DAY" | "HOUR" 
                        [ "(" UnsignedIntLiteral ")" ]
                        [ "TO" ( "MONTH" | "HOUR" | "MINUTE" | "SECOND" ) ]
                      | "SECOND" [ "(" UnsignedIntLiteral [ "," UnsignedIntLiteral ] ")" ]
+IntervalQualifierStart ::= ( "YEAR" | "QUARTER" | "MONTH" | "WEEK" | "DAY" | "HOUR" | "MINUTE" )
+                           [ "(" UnsignedIntLiteral ")" ]
+                         | "SECOND" [ "(" UnsignedIntLiteral [ "," UnsignedIntLiteral ] ")" ]
