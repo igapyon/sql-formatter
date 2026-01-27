@@ -3866,7 +3866,7 @@ class CalciteParser {
     let kind;
     if (this.acceptKeyword("MULTISET")) kind = "MULTISET";
     else if (this.acceptKeyword("ARRAY")) kind = "ARRAY";
-    else return this.notImplemented("CollectionsTypeName");
+    else return null;
     return { type: "CollectionsTypeName", dataType, kind };
   }
 
