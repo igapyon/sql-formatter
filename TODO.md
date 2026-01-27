@@ -38,23 +38,21 @@
 - 失敗時は notImplemented を残して段階的に埋める。
 
 ## 未実装一覧（notImplemented が残るもの）
-SqlInsert / Where / LeafQuery / TableConstructor /
+SqlInsert / LeafQuery / TableConstructor /
 WindowRange / FetchClause / JoinType / Tablesample /
 BinaryRowOperator / PostfixRowOperator / AtomicRowExpression / BuiltinFunctionCall /
 JsonExistsErrorBehavior / JsonQueryWrapperBehavior /
-Literal / NonIntervalLiteral / SpecialLiteral / IntervalQualifierStart /
+Literal / NonIntervalLiteral / UnsignedNumericLiteral / SpecialLiteral / DateTimeLiteral / IntervalQualifier / IntervalQualifierStart /
 BinaryQueryOperator /
 SimpleIdentifierOrListOrEmpty /
-SqlSelectKeywords / ParenthesizedLiteralOptionCommaList / ParenthesizedKeyValueOptionCommaList /
-AddExpression / AddCompoundIdentifierTypes / Default / TableParam /
-ReservedFunctionName / NonReservedJdbcFunctionName / NonReservedKeyWord / NonReservedKeyWord0of3 / NonReservedKeyWord1of3 / NonReservedKeyWord2of3 /
+AddExpression / AddCompoundIdentifierTypes /
+ReservedFunctionName / NonReservedKeyWord /
 StringAggFunctionCall / PercentileFunctionCall / GroupByWindowingCall /
 MatchRecognizeFunctionCall / MatchRecognizeCallWithModifier / MatchRecognizeNavigationLogical / MatchRecognizeNavigationPhysical /
 NullTreatment /
 DynamicParam / ContextVariable / SequenceExpression /
-PatternPrimary / weekdayName / Year / Quarter / Month / Week / Day / Hour / Minute / Second / IntervalWithoutQualifier /
-JsonNameAndValue / JsonArrayAggOrderByClause /
+PatternPrimary / weekdayName / Year / Quarter / Month / Week / Day / Hour / Minute / Second /
+JsonNameAndValue /
 FloorCeilOptions / StandardFloorCeilOptions /
-JdbcOdbcDataTypeName / JdbcOdbcDataType / CollectionsTypeName /
-CollateClause / UnusedExtension / MeasureColumnCommaList / SubsetDefinitionCommaList /
-Natural / Scope / comp / periodOperator
+JdbcOdbcDataTypeName / CollectionsTypeName /
+Scope / comp
