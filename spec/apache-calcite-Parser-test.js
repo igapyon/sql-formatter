@@ -25,6 +25,23 @@ const cases = [
   { name: 'window-order-frame', sql: 'SELECT a FROM t WINDOW w AS (PARTITION BY a ORDER BY b ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING)', fn: 'SqlStmtList' },
   { name: 'window-range', sql: 'SELECT a FROM t WINDOW w AS (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)', fn: 'SqlStmtList' },
   { name: 'window-allow-partial', sql: 'SELECT a FROM t WINDOW w AS (ORDER BY b ALLOW PARTIAL)', fn: 'SqlStmtList' },
+  { name: 'lexer-line-comment', sql: 'SELECT 1 -- trailing comment', fn: 'SqlStmtList' },
+  { name: 'lexer-block-comment', sql: 'SELECT /* block */ 1', fn: 'SqlStmtList' },
+  { name: 'lexer-quoted-ident-double', sql: 'SELECT "Select" FROM "From"', fn: 'SqlStmtList' },
+  { name: 'lexer-quoted-ident-backtick', sql: 'SELECT `a` FROM `b`', fn: 'SqlStmtList' },
+  { name: 'lexer-string-escape', sql: "SELECT 'a''b' FROM t", fn: 'SqlStmtList' },
+  { name: 'lexer-number-exponent', sql: 'SELECT 1.2e-3 FROM t', fn: 'SqlStmtList' },
+  { name: 'lexer-number-leading-dot', sql: 'SELECT .5 FROM t', fn: 'SqlStmtList' },
+  { name: 'ddl-set', sql: 'SET foo = 1', fn: 'SqlStmtList' },
+  { name: 'ddl-reset', sql: 'RESET foo', fn: 'SqlStmtList' },
+  { name: 'ddl-reset-all', sql: 'RESET ALL', fn: 'SqlStmtList' },
+  { name: 'ddl-alter-system-set', sql: 'ALTER SYSTEM SET foo = ON', fn: 'SqlStmtList' },
+  { name: 'ddl-alter-session-reset', sql: 'ALTER SESSION RESET foo', fn: 'SqlStmtList' },
+  { name: 'ddl-explain', sql: 'EXPLAIN PLAN INCLUDING ATTRIBUTES WITH TYPE AS JSON FOR SELECT 1', fn: 'SqlStmtList' },
+  { name: 'ddl-describe-table', sql: 'DESCRIBE TABLE t', fn: 'SqlStmtList' },
+  { name: 'ddl-describe-database', sql: 'DESCRIBE DATABASE db', fn: 'SqlStmtList' },
+  { name: 'ddl-describe-statement', sql: 'DESCRIBE STATEMENT SELECT 1', fn: 'SqlStmtList' },
+  { name: 'ddl-call', sql: 'CALL foo(1)', fn: 'SqlStmtList' },
 ];
 
 if (require.main === module) {
