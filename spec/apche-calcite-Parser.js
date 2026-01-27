@@ -372,7 +372,7 @@ class CalciteParser {
     let mode;
     if (this.acceptKeyword("INSERT")) mode = "INSERT";
     else if (this.acceptKeyword("UPSERT")) mode = "UPSERT";
-    else return this.notImplemented("SqlInsert");
+    else throw new Error("Invalid SqlInsert");
     const keywords = this.SqlInsertKeywords();
     this.expectKeyword("INTO");
     const table = this.CompoundTableIdentifier();
@@ -591,7 +591,7 @@ class CalciteParser {
     if (this.isKeyword("TABLE")) {
       return this.ExplicitTable();
     }
-    return this.notImplemented("LeafQuery");
+    throw new Error("Invalid LeafQuery");
   }
 
   ExplicitTable() {
@@ -615,7 +615,7 @@ class CalciteParser {
       }
       return { type: "TableConstructor", kind: "VALUE", rows };
     }
-    return this.notImplemented("TableConstructor");
+    throw new Error("Invalid TableConstructor");
   }
 
   RowConstructor() {
@@ -758,7 +758,7 @@ class CalciteParser {
     const expr = this.Expression();
     if (this.acceptKeyword("PRECEDING")) return { type: "WindowRange", kind: "PRECEDING", expr };
     if (this.acceptKeyword("FOLLOWING")) return { type: "WindowRange", kind: "FOLLOWING", expr };
-    return this.notImplemented("WindowRange");
+    throw new Error("Invalid WindowRange");
   }
 
   WindowExclusion() {
@@ -818,12 +818,12 @@ class CalciteParser {
     let mode;
     if (this.acceptKeyword("FIRST")) mode = "FIRST";
     else if (this.acceptKeyword("NEXT")) mode = "NEXT";
-    else return this.notImplemented("FetchClause");
+    else throw new Error("Invalid FetchClause");
     const value = this.UnsignedNumericLiteralOrParam();
     let rows;
     if (this.acceptKeyword("ROW")) rows = "ROW";
     else if (this.acceptKeyword("ROWS")) rows = "ROWS";
-    else return this.notImplemented("FetchClause");
+    else throw new Error("Invalid FetchClause");
     this.expectKeyword("ONLY");
     return { type: "FetchClause", mode, value, rows };
   }
@@ -890,7 +890,7 @@ class CalciteParser {
     }
     if (this.acceptKeyword("CROSS")) { this.expectKeyword("JOIN"); return "CROSS JOIN"; }
     if (this.acceptKeyword("ASOF")) { this.expectKeyword("JOIN"); return "ASOF JOIN"; }
-    return this.notImplemented("JoinType");
+    throw new Error("Invalid JoinType");
   }
 
   JoinTable() {
@@ -1031,7 +1031,7 @@ class CalciteParser {
     let kind;
     if (this.acceptKeyword("BERNOULLI")) kind = "BERNOULLI";
     else if (this.acceptKeyword("SYSTEM")) kind = "SYSTEM";
-    else return this.notImplemented("Tablesample");
+    else throw new Error("Invalid Tablesample");
     this.expectSymbol("(");
     const percentage = this.UnsignedNumericLiteral();
     this.expectSymbol(")");
@@ -1375,7 +1375,7 @@ class CalciteParser {
     }
     const multiset = this.BinaryMultisetOperator();
     if (multiset) return multiset;
-    return this.notImplemented("BinaryRowOperator");
+    return null;
   }
 
   BinaryMultisetOperator() {
@@ -1429,7 +1429,7 @@ class CalciteParser {
         else if (this.acceptKeyword("SCALAR")) jsonType = "SCALAR";
         return { type: "PostfixRowOperator", operator: "IS", not, value: "JSON", jsonType };
       }
-      return this.notImplemented("PostfixRowOperator");
+      return null;
     }
     if (this.acceptKeyword("FORMAT")) {
       const jsonRepresentation = this.JsonRepresentation();
@@ -1537,7 +1537,7 @@ class CalciteParser {
     if (t.type === "IDENT") {
       return this.CompoundIdentifier();
     }
-    return this.notImplemented("AtomicRowExpression");
+    throw new Error("Invalid AtomicRowExpression");
   }
 
   BuiltinFunctionCall() {
