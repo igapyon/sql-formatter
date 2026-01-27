@@ -181,7 +181,8 @@ class CalciteParser {
       "FROM", "WHERE", "GROUP", "HAVING", "WINDOW", "QUALIFY", "ORDER", "LIMIT", "OFFSET", "FETCH",
       "UNION", "INTERSECT", "EXCEPT",
       "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "ASOF",
-      "SET", "USING", "ON", "WHEN",
+      "SET", "USING", "ON", "WHEN", "FOR",
+      "MATCH_RECOGNIZE",
     ]);
     return keywords.has(value);
   }
@@ -718,7 +719,17 @@ class CalciteParser {
   WindowSpecification() {
     this.expectSymbol("(");
     let name = null;
-    if (this.peek().type === "IDENT") {
+    if (
+      this.peek().type === "IDENT" &&
+      !this.isKeyword("PARTITION") &&
+      !this.isKeyword("ORDER") &&
+      !this.isKeyword("ROWS") &&
+      !this.isKeyword("RANGE") &&
+      !this.isKeyword("GROUPS") &&
+      !this.isKeyword("EXCLUDE") &&
+      !this.isKeyword("ALLOW") &&
+      !this.isKeyword("DISALLOW")
+    ) {
       name = this.SimpleIdentifier();
     }
     let partitionBy = null;
@@ -983,6 +994,8 @@ class CalciteParser {
     if (this.isKeyword("PIVOT")) pivot = this.Pivot();
     let unpivot = null;
     if (this.isKeyword("UNPIVOT")) unpivot = this.Unpivot();
+    let matchRecognize = null;
+    if (this.isKeyword("MATCH_RECOGNIZE")) matchRecognize = this.MatchRecognize();
     // alias
     let alias = null;
     let columns = null;
@@ -991,7 +1004,10 @@ class CalciteParser {
       if (this.isSymbol("(")) {
         columns = this.ParenthesizedSimpleIdentifierList();
       }
-    } else if (this.peek().type === "IDENT") {
+    } else if (
+      this.peek().type === "IDENT" &&
+      !this.isClauseKeyword(String(this.peek().value).toUpperCase())
+    ) {
       alias = this.SimpleIdentifier();
       if (this.isSymbol("(")) {
         columns = this.ParenthesizedSimpleIdentifierList();
@@ -1001,7 +1017,7 @@ class CalciteParser {
     if (this.isKeyword("TABLESAMPLE")) {
       tablesample = this.Tablesample();
     }
-    return { type: "TableRef", base, pivot, unpivot, alias, columns, tablesample };
+    return { type: "TableRef", base, pivot, unpivot, matchRecognize, alias, columns, tablesample };
   }
 
   Snapshot() {
@@ -3359,6 +3375,7 @@ class CalciteParser {
 
   PatternFactor() {
     const primary = this.PatternPrimary();
+    if (!primary) return null;
     let quantifier = null;
     if (this.acceptSymbol("*")) quantifier = { kind: "*" };
     else if (this.acceptSymbol("+")) quantifier = { kind: "+" };
