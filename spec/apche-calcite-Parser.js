@@ -1730,7 +1730,7 @@ class CalciteParser {
         this.isKeyword("PREV") || this.isKeyword("NEXT") || this.isKeyword("RUNNING") || this.isKeyword("FINAL")) {
       return this.MatchRecognizeFunctionCall();
     }
-    return this.notImplemented("BuiltinFunctionCall");
+    throw new Error("Invalid BuiltinFunctionCall");
   }
 
   JsonApiCommonSyntax() {
