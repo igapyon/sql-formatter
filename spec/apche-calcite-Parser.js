@@ -2700,7 +2700,7 @@ class CalciteParser {
   }
 
   AddExpression() {
-    return this.notImplemented("AddExpression");
+    return this.Expression();
   }
 
   AddExpression2b() {
@@ -2907,7 +2907,11 @@ class CalciteParser {
   }
 
   AddCompoundIdentifierTypes() {
-    return this.notImplemented("AddCompoundIdentifierTypes");
+    const items = [this.AddCompoundIdentifierType()];
+    while (this.acceptSymbol(",")) {
+      items.push(this.AddCompoundIdentifierType());
+    }
+    return { type: "AddCompoundIdentifierTypes", items };
   }
 
   AddHint() {
@@ -3572,7 +3576,7 @@ class CalciteParser {
     if (this.acceptKeyword("VALUE")) separator = "VALUE";
     else if (this.acceptSymbol(",")) separator = ",";
     else if (this.acceptSymbol(":")) separator = ":";
-    else return this.notImplemented("JsonNameAndValue");
+    else return null;
     const value = this.Expression();
     return { type: "JsonNameAndValue", key, name, separator, value };
   }
@@ -3810,11 +3814,18 @@ class CalciteParser {
   }
 
   FloorCeilOptions() {
-    return this.notImplemented("FloorCeilOptions");
+    return this.StandardFloorCeilOptions();
   }
 
   StandardFloorCeilOptions() {
-    return this.notImplemented("StandardFloorCeilOptions");
+    this.expectSymbol("(");
+    const expr = this.Expression();
+    let to = null;
+    if (this.acceptKeyword("TO")) {
+      to = this.TimeUnitOrName();
+    }
+    this.expectSymbol(")");
+    return { type: "StandardFloorCeilOptions", expr, to };
   }
 
   JdbcOdbcDataTypeName() {

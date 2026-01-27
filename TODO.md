@@ -38,10 +38,7 @@
 - 失敗時は notImplemented を残して段階的に埋める。
 
 ## 未実装一覧（notImplemented が残るもの）
-AddExpression / AddCompoundIdentifierTypes /
 ReservedFunctionName / NonReservedKeyWord /
 PatternPrimary / weekdayName / Year / Quarter / Month / Week / Day / Hour / Minute / Second /
-JsonNameAndValue /
-FloorCeilOptions / StandardFloorCeilOptions /
 JdbcOdbcDataTypeName / CollectionsTypeName /
 Scope / comp
