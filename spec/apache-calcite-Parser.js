@@ -1,5 +1,5 @@
 /**
- * Stage 1 skeleton parser generated from apche-calcite-Parser.md.
+ * Stage 1 skeleton parser generated from apache-calcite-Parser.md.
  * - Library-free lexer
  * - One method per EBNF production (skeleton)
  */

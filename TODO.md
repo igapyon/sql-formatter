@@ -1,4 +1,4 @@
-# TODO (apche-calcite-Parser.js)
+# TODO (apache-calcite-Parser.js)
 
 ## 進捗サマリ
 - Stage 1: lexer + 全 production skeleton 済み。
@@ -20,7 +20,7 @@
 6. 低優先ユーティリティ
    - ReservedFunctionName / NonReserved* / CollectionsTypeName / CollateClause など
 7. 厳格な突合（最終）
-   - apche-calcite-Parser.md を正とし、apche-calcite-Parser.js の整合を最終チェック。
+   - apache-calcite-Parser.md を正とし、apache-calcite-Parser.js の整合を最終チェック。
    - 手順（最小）:
      1) .md から production 名一覧を抽出（順序付き）
      2) .js のメソッド名一覧を抽出（順序付き）

@@ -1,6 +1,6 @@
 'use strict';
 
-const { CalciteLexer, CalciteParser } = require('./apche-calcite-Parser');
+const { CalciteLexer, CalciteParser } = require('./apache-calcite-Parser');
 
 const cases = [
   { name: 'select-basic', sql: 'SELECT 1', fn: 'SqlStmtList' },
