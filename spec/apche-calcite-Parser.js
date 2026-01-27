@@ -535,10 +535,6 @@ class CalciteParser {
     return { type: "WhenNotMatchedClause", keywords, columns, values };
   }
 
-  Where() {
-    return this.notImplemented("Where");
-  }
-
   OrderedQueryOrExpr() {
     const query = this.QueryOrExpr();
     const orderByLimitOpt = this.OrderByLimitOpt();
