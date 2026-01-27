@@ -150,7 +150,13 @@ MatchRecognizeClause ::= "MATCH_RECOGNIZE" "("
                            [ OrderBy ] 
                            [ "MEASURES" MeasureColumn { "," MeasureColumn } ] 
                            [ ( "ONE" "ROW" | "ALL" "ROWS" ) "PER" "MATCH" ]
-                           [ "AFTER" "MATCH" "SKIP" <SkipTo> ]
+                           [ "AFTER" "MATCH" "SKIP"
+                               ( "PAST" "LAST" "ROW"
+                               | "TO" "NEXT" "ROW"
+                               | "TO" "FIRST" SimpleIdentifier
+                               | "TO" [ "LAST" ] SimpleIdentifier
+                               )
+                           ]
                            "PATTERN" "(" [ "^" ] PatternExpression [ "$" ] ")" 
                            [ "WITHIN" IntervalLiteral ] 
                            [ "SUBSET" SubsetDefinition { "," SubsetDefinition } ]
@@ -388,8 +394,18 @@ Arg0               ::= [ SimpleIdentifier ":=" ]
 Arg                ::= [ SimpleIdentifier ":=" ]
                        ( Default | LambdaExpression | TableParam | Expression )
 Default            ::= "DEFAULT"
-TableParam         ::= TableRef [ "PARTITION" "BY" ExpressionList ] [ OrderBy ]
-PartitionedQueryOrQueryOrExpr ::= OrderedQueryOrExpr [ "PARTITION" "BY" ExpressionList ] [ OrderBy ]
+TableParam         ::= ExplicitTable
+                       [ "PARTITION" "BY" SimpleIdentifierOrList ]
+                       [ OrderByOfSetSemanticsTable ]
+PartitionedQueryOrQueryOrExpr ::= OrderedQueryOrExpr
+                                 [ "PARTITION" "BY" SimpleIdentifierOrList ]
+                                 [ OrderByOfSetSemanticsTable ]
+OrderByOfSetSemanticsTable ::= "ORDER" "BY"
+                               ( "(" OrderItem { "," OrderItem } ")"
+                               | OrderItem
+                               )
+// NOTE: OrderByOfSetSemanticsTable is a restricted ORDER BY used for set-semantics tables;
+// it allows a parenthesized list or a single OrderItem, unlike the general OrderBy rule.
 NamedFunctionCall  ::= CompoundIdentifier FunctionParameterList
 JdbcFunctionCall   ::= "{fn" CompoundIdentifier "(" [ Expression { "," Expression } ] ")" "}"
 
@@ -423,6 +439,6 @@ PatternDefinition  ::= SimpleIdentifier "AS" Expression
 SkipTo             ::= "PAST" "LAST" "ROW"
                      | "TO" "NEXT" "ROW"
                      | "TO" "FIRST" SimpleIdentifier
-                     | "TO" "LAST" SimpleIdentifier
+                     | "TO" [ "LAST" ] SimpleIdentifier
 
 ```
