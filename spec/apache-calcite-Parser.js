@@ -20,22 +20,100 @@ class CalciteLexer {
         this.pos++;
         continue;
       }
+      // line comment
+      if (ch === "-" && s[this.pos + 1] === "-") {
+        this.pos += 2;
+        while (this.pos < s.length && s[this.pos] !== "\n") this.pos++;
+        continue;
+      }
+      // block comment
+      if (ch === "/" && s[this.pos + 1] === "*") {
+        this.pos += 2;
+        while (this.pos < s.length && !(s[this.pos] === "*" && s[this.pos + 1] === "/")) {
+          this.pos++;
+        }
+        if (this.pos < s.length) this.pos += 2;
+        continue;
+      }
       // strings (single-quoted, no escape handling)
       if (ch === "'") {
         let value = "";
         this.pos++;
-        while (this.pos < s.length && s[this.pos] !== "'") {
+        while (this.pos < s.length) {
+          if (s[this.pos] === "'") {
+            if (s[this.pos + 1] === "'") {
+              value += "'";
+              this.pos += 2;
+              continue;
+            }
+            break;
+          }
+          if (s[this.pos] === "\\" && this.pos + 1 < s.length) {
+            value += s[this.pos + 1];
+            this.pos += 2;
+            continue;
+          }
           value += s[this.pos++];
         }
-        this.pos++;
+        if (s[this.pos] === "'") this.pos++;
         this.tokens.push({ type: "STRING", value });
         continue;
       }
-      // numbers
-      if (/[0-9]/.test(ch)) {
+      // quoted identifiers
+      if (ch === '"' || ch === "`") {
+        const quote = ch;
         let value = "";
-        while (this.pos < s.length && /[0-9\.]/.test(s[this.pos])) {
+        this.pos++;
+        while (this.pos < s.length) {
+          if (s[this.pos] === quote) {
+            if (s[this.pos + 1] === quote) {
+              value += quote;
+              this.pos += 2;
+              continue;
+            }
+            break;
+          }
           value += s[this.pos++];
+        }
+        if (s[this.pos] === quote) this.pos++;
+        this.tokens.push({ type: "IDENT", value });
+        continue;
+      }
+      // numbers (including leading dot and exponent)
+      if (/[0-9]/.test(ch) || (ch === "." && /[0-9]/.test(s[this.pos + 1]))) {
+        let value = "";
+        if (ch === ".") {
+          value += ".";
+          this.pos++;
+          while (this.pos < s.length && /[0-9]/.test(s[this.pos])) {
+            value += s[this.pos++];
+          }
+        } else {
+          while (this.pos < s.length && /[0-9]/.test(s[this.pos])) {
+            value += s[this.pos++];
+          }
+          if (s[this.pos] === ".") {
+            value += ".";
+            this.pos++;
+            while (this.pos < s.length && /[0-9]/.test(s[this.pos])) {
+              value += s[this.pos++];
+            }
+          }
+        }
+        if (/[eE]/.test(s[this.pos])) {
+          const e = s[this.pos];
+          const sign = s[this.pos + 1];
+          if (/[0-9\+\-]/.test(sign) && /[0-9]/.test(s[this.pos + 2] || "")) {
+            value += e;
+            this.pos++;
+            if (sign === "+" || sign === "-") {
+              value += sign;
+              this.pos++;
+            }
+            while (this.pos < s.length && /[0-9]/.test(s[this.pos])) {
+              value += s[this.pos++];
+            }
+          }
         }
         this.tokens.push({ type: "NUMBER", value });
         continue;
