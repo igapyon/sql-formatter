@@ -176,6 +176,15 @@ class CalciteParser {
     }
     return false;
   }
+  isClauseKeyword(value) {
+    const keywords = new Set([
+      "FROM", "WHERE", "GROUP", "HAVING", "WINDOW", "QUALIFY", "ORDER", "LIMIT", "OFFSET", "FETCH",
+      "UNION", "INTERSECT", "EXCEPT",
+      "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "ASOF",
+      "SET", "USING", "ON", "WHEN",
+    ]);
+    return keywords.has(value);
+  }
   isTableHintsStart() {
     return this.isSymbol("/") && this.isSymbolAt("*", 1) && this.isSymbolAt("+", 2);
   }
@@ -411,7 +420,7 @@ class CalciteParser {
     let alias = null;
     if (this.acceptKeyword("AS")) {
       alias = this.SimpleIdentifier();
-    } else if (this.peek().type === "IDENT") {
+    } else if (this.peek().type === "IDENT" && !this.isClauseKeyword(String(this.peek().value).toUpperCase())) {
       alias = this.SimpleIdentifier();
     }
     let where = null;
@@ -435,7 +444,7 @@ class CalciteParser {
     let alias = null;
     if (this.acceptKeyword("AS")) {
       alias = this.SimpleIdentifier();
-    } else if (this.peek().type === "IDENT") {
+    } else if (this.peek().type === "IDENT" && !this.isClauseKeyword(String(this.peek().value).toUpperCase())) {
       alias = this.SimpleIdentifier();
     }
     this.expectKeyword("SET");
@@ -472,7 +481,7 @@ class CalciteParser {
     let alias = null;
     if (this.acceptKeyword("AS")) {
       alias = this.SimpleIdentifier();
-    } else if (this.peek().type === "IDENT") {
+    } else if (this.peek().type === "IDENT" && !this.isClauseKeyword(String(this.peek().value).toUpperCase())) {
       alias = this.SimpleIdentifier();
     }
     this.expectKeyword("USING");
@@ -2781,6 +2790,9 @@ class CalciteParser {
         alias = this.SimpleIdentifierFromStringLiteral();
       }
     } else if (this.peek().type === "IDENT" || this.peek().type === "STRING") {
+      if (this.peek().type === "IDENT" && this.isClauseKeyword(String(this.peek().value).toUpperCase())) {
+        return { type: "AddSelectItem", expr, alias, measure };
+      }
       if (this.peek().type === "IDENT") alias = this.SimpleIdentifier();
       else alias = this.SimpleIdentifierFromStringLiteral();
     }
@@ -2846,7 +2858,7 @@ class CalciteParser {
     let alias = null;
     if (this.acceptKeyword("AS")) {
       alias = this.SimpleIdentifier();
-    } else if (this.peek().type === "IDENT") {
+    } else if (this.peek().type === "IDENT" && !this.isClauseKeyword(String(this.peek().value).toUpperCase())) {
       alias = this.SimpleIdentifier();
     }
     return { type: "AddPivotAgg", call, alias };
