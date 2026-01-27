@@ -2426,15 +2426,17 @@ class CalciteParser {
   }
 
   TableOverOpt() {
-    return this.notImplemented("TableOverOpt");
+    // Extension point in Calcite; no syntax in base grammar
+    return null;
   }
 
   Over() {
-    return this.notImplemented("Over");
+    return this.TableOverOpt();
   }
 
   ExtendedTableRef() {
-    return this.notImplemented("ExtendedTableRef");
+    // Parser extension point; not supported in this implementation
+    return { type: "ExtendedTableRef" };
   }
 
   TableFunctionCall() {
