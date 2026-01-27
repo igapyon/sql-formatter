@@ -1,295 +1,1137 @@
 /**
- * SECTION 0: LEXER (字句解析)
- * 全てのキーワードと記号を抽出します。
+ * Stage 1 skeleton parser generated from apche-calcite-Parser.md.
+ * - Library-free lexer
+ * - One method per EBNF production (skeleton)
  */
+'use strict';
+
 class CalciteLexer {
-    constructor(input) {
-        this.input = input;
-        this.pos = 0;
-        this.tokens = [];
-        this.keywords = new Set([
-            "SELECT", "FROM", "WHERE", "GROUP", "BY", "HAVING", "ORDER", "LIMIT", "OFFSET", "FETCH",
-            "INNER", "LEFT", "RIGHT", "FULL", "OUTER", "CROSS", "JOIN", "ON", "USING", "NATURAL",
-            "WITH", "AS", "DISTINCT", "ALL", "AND", "OR", "NOT", "IS", "NULL", "TRUE", "FALSE",
-            "CASE", "WHEN", "THEN", "ELSE", "END", "CAST", "EXTRACT", "IN", "BETWEEN", "LIKE",
-            "SET", "RESET", "ALTER", "SYSTEM", "SESSION", "EXPLAIN", "PLAN", "FOR", "DESCRIBE", "CALL"
-            // 必要に応じて追加
-        ]);
-    }
+  constructor(input) {
+    this.input = input || "";
+    this.pos = 0;
+    this.tokens = [];
+  }
 
-    tokenize() {
-        while (this.pos < this.input.length) {
-            const char = this.input[this.pos];
-            if (/\s/.test(char)) { this.pos++; continue; }
-            
-            if (/[a-zA-Z_]/.test(char)) {
-                let value = "";
-                while (this.pos < this.input.length && /[a-zA-Z0-9_]/.test(this.input[this.pos])) {
-                    value += this.input[this.pos++];
-                }
-                const upper = value.toUpperCase();
-                this.tokens.push({ type: this.keywords.has(upper) ? upper : "IDENTIFIER", value: upper });
-                continue;
-            }
-
-            if (/[0-9]/.test(char)) {
-                let value = "";
-                while (this.pos < this.input.length && /[0-9.]/.test(this.input[this.pos])) {
-                    value += this.input[this.pos++];
-                }
-                this.tokens.push({ type: "LITERAL_NUM", value });
-                continue;
-            }
-
-            if (char === "'") {
-                let value = "";
-                this.pos++; // skip '
-                while (this.pos < this.input.length && this.input[this.pos] !== "'") {
-                    value += this.input[this.pos++];
-                }
-                this.pos++; // skip '
-                this.tokens.push({ type: "LITERAL_STR", value });
-                continue;
-            }
-
-            const symbols = [
-                { s: "||", t: "CONCAT" }, { s: "<>", t: "NE" }, { s: "!=", t: "NE" },
-                { s: "<=", t: "LTE" }, { s: ">=", t: "GTE" }, { s: "(", t: "LPAREN" },
-                { s: ")", t: "RPAREN" }, { s: ",", t: "COMMA" }, { s: ";", t: "SEMI" },
-                { s: "=", t: "EQ" }, { s: "<", t: "LT" }, { s: ">", t: "GT" },
-                { s: "+", t: "PLUS" }, { s: "-", t: "MINUS" }, { s: "*", t: "STAR" },
-                { s: "/", t: "SLASH" }, { s: ".", t: "DOT" }
-            ];
-
-            let matched = false;
-            for (const sym of symbols) {
-                if (this.input.startsWith(sym.s, this.pos)) {
-                    this.tokens.push({ type: sym.t, value: sym.s });
-                    this.pos += sym.s.length;
-                    matched = true;
-                    break;
-                }
-            }
-            if (!matched) this.pos++;
+  tokenize() {
+    const s = this.input;
+    while (this.pos < s.length) {
+      const ch = s[this.pos];
+      if (/\s/.test(ch)) { this.pos++; continue; }
+      // strings
+      if (ch === "'") {
+        let value = "";
+        this.pos++;
+        while (this.pos < s.length && s[this.pos] !== "'") {
+          value += s[this.pos++];
         }
-        this.tokens.push({ type: "EOF", value: null });
-        return this.tokens;
+        this.pos++;
+        this.tokens.push({ type: "STRING", value });
+        continue;
+      }
+      // numbers
+      if (/[0-9]/.test(ch)) {
+        let value = "";
+        while (this.pos < s.length && /[0-9\.]/.test(s[this.pos])) {
+          value += s[this.pos++];
+        }
+        this.tokens.push({ type: "NUMBER", value });
+        continue;
+      }
+      // identifiers/keywords
+      if (/[A-Za-z_]/.test(ch)) {
+        let value = "";
+        while (this.pos < s.length && /[A-Za-z0-9_]/.test(s[this.pos])) {
+          value += s[this.pos++];
+        }
+        this.tokens.push({ type: "IDENT", value });
+        continue;
+      }
+      // operators/punct
+      const two = s.slice(this.pos, this.pos + 2);
+      const twoOps = ["<=", ">=", "<>", "!=", "||", "::", "->"];
+      if (twoOps.includes(two)) {
+        this.tokens.push({ type: two, value: two });
+        this.pos += 2;
+        continue;
+      }
+      this.tokens.push({ type: ch, value: ch });
+      this.pos++;
     }
+    this.tokens.push({ type: "EOF", value: null });
+    return this.tokens;
+  }
 }
 
-/**
- * SECTION 1-6: PARSER (構文解析)
- */
 class CalciteParser {
-    constructor(tokens) {
-        this.tokens = tokens;
-        this.pos = 0;
+  constructor(tokens) {
+    this.tokens = tokens || [];
+    this.pos = 0;
+  }
+  peek() { return this.tokens[this.pos] || { type: "EOF", value: null }; }
+  next() { return this.tokens[this.pos++] || { type: "EOF", value: null }; }
+  expect(type) {
+    const t = this.peek();
+    if (t.type !== type) {
+      throw new Error(`Expected ${type} but got ${t.type}`);
     }
+    return this.next();
+  }
+  notImplemented(rule) {
+    const t = this.peek();
+    throw new Error(`Not implemented: ${rule} at token ${t.type}`);
+  }
 
-    peek() { return this.tokens[this.pos]; }
-    eat(type) {
-        if (this.peek().type === type) return this.tokens[this.pos++];
-        throw new Error(`Unexpected token: ${this.peek().type} (Expected: ${type})`);
-    }
-    match(...types) { return types.includes(this.peek().type); }
+  SqlStmtList() {
+    return this.notImplemented("SqlStmtList");
+  }
 
-    // --- 1. エントリポイント ---
-    parseSqlStmtList() {
-        const stmts = [this.parseSqlStmt()];
-        while (this.match("SEMI")) {
-            this.eat("SEMI");
-            if (!this.match("EOF")) stmts.push(this.parseSqlStmt());
-        }
-        return stmts;
-    }
+  SqlStmtEof() {
+    return this.notImplemented("SqlStmtEof");
+  }
 
-    parseSqlStmt() {
-        const t = this.peek().type;
-        if (t === "SET" || t === "RESET") return this.parseSqlSetOption();
-        if (t === "ALTER") return this.parseSqlAlter();
-        if (t === "EXPLAIN") return this.parseSqlExplain();
-        if (t === "DESCRIBE") return this.parseSqlDescribe();
-        if (t === "CALL") return this.parseSqlProcedureCall();
-        return this.parseOrderedQueryOrExpr();
-    }
+  SqlExpressionEof() {
+    return this.notImplemented("SqlExpressionEof");
+  }
 
-    // --- 2. クエリとSELECT構文 ---
-    parseOrderedQueryOrExpr() {
-        let withClause = null;
-        if (this.match("WITH")) withClause = this.parseWithClause();
-        
-        let query = this.parseSqlSelect(); // 本来は LeafQueryOrExpr
-        
-        if (this.match("ORDER")) query.orderBy = this.parseOrderBy();
-        if (this.match("LIMIT")) query.limit = this.parseLimit();
-        
-        return { type: "OrderedQuery", withClause, query };
-    }
+  SqlStmt() {
+    return this.notImplemented("SqlStmt");
+  }
 
-    parseSqlSelect() {
-        this.eat("SELECT");
-        const distinct = this.match("DISTINCT") ? this.eat("DISTINCT") : null;
-        
-        const selectItems = [];
-        do {
-            if (this.match("COMMA")) this.eat("COMMA");
-            selectItems.push(this.parseSelectItem());
-        } while (this.match("COMMA"));
+  SqlSetOption() {
+    return this.notImplemented("SqlSetOption");
+  }
 
-        let from = null;
-        if (this.match("FROM")) {
-            this.eat("FROM");
-            from = this.parseFromClause();
-        }
+  SqlAlter() {
+    return this.notImplemented("SqlAlter");
+  }
 
-        let where = null;
-        if (this.match("WHERE")) {
-            this.eat("WHERE");
-            where = this.parseExpression();
-        }
+  SqlExplain() {
+    return this.notImplemented("SqlExplain");
+  }
 
-        return { type: "SqlSelect", distinct, selectItems, from, where };
-    }
+  ExplainDetailLevel() {
+    return this.notImplemented("ExplainDetailLevel");
+  }
 
-    parseSelectItem() {
-        if (this.match("STAR")) return { type: "AllColumns", value: this.eat("STAR").value };
-        const expr = this.parseExpression();
-        let alias = null;
-        if (this.match("AS") || this.match("IDENTIFIER")) {
-            if (this.match("AS")) this.eat("AS");
-            alias = this.eat("IDENTIFIER").value;
-        }
-        return { type: "SelectItem", expr, alias };
-    }
+  ExplainDepth() {
+    return this.notImplemented("ExplainDepth");
+  }
 
-    // --- 3. FROM句とテーブル参照 ---
-    parseFromClause() {
-        let tableRef = this.parseTableRef();
-        const joins = [];
-        while (this.match("JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "COMMA")) {
-            joins.push(this.parseJoin());
-        }
-        return { tableRef, joins };
-    }
+  SqlQueryOrDml() {
+    return this.notImplemented("SqlQueryOrDml");
+  }
 
-    parseTableRef() {
-        const name = this.eat("IDENTIFIER").value; // 簡易化: CompoundIdentifier
-        let alias = null;
-        if (this.match("AS") || this.match("IDENTIFIER")) {
-            if (this.match("AS")) this.eat("AS");
-            alias = this.eat("IDENTIFIER").value;
-        }
-        return { type: "Table", name, alias };
-    }
+  SqlDescribe() {
+    return this.notImplemented("SqlDescribe");
+  }
 
-    parseJoin() {
-        let type = "INNER";
-        if (this.match("COMMA")) { this.eat("COMMA"); return { type: "COMMA", table: this.parseTableRef() }; }
-        if (this.match("LEFT")) { this.eat("LEFT"); type = "LEFT"; if (this.match("OUTER")) this.eat("OUTER"); }
-        this.eat("JOIN");
-        const table = this.parseTableRef();
-        let condition = null;
-        if (this.match("ON")) { this.eat("ON"); condition = this.parseExpression(); }
-        return { type, table, condition };
-    }
+  SqlProcedureCall() {
+    return this.notImplemented("SqlProcedureCall");
+  }
 
-    // --- 4. 式の階層構造 (Precedence) ---
-    parseExpression() { return this.parseBinary(0); }
+  SqlInsert() {
+    return this.notImplemented("SqlInsert");
+  }
 
-    // 演算子の優先順位
-    parseBinary(precedence) {
-        const ops = [
-            ["OR"], ["AND"], ["EQ", "NE", "LT", "GT", "LTE", "GTE", "IS", "LIKE", "IN"], ["PLUS", "MINUS"], ["STAR", "SLASH"]
-        ];
-        if (precedence >= ops.length) return this.parseAtomic();
+  SqlInsertKeywords() {
+    return this.notImplemented("SqlInsertKeywords");
+  }
 
-        let left = this.parseBinary(precedence + 1);
-        while (this.match(...ops[precedence])) {
-            const op = this.eat(this.peek().type).value;
-            const right = this.parseBinary(precedence + 1);
-            left = { type: "BinaryExpr", op, left, right };
-        }
-        return left;
-    }
+  SqlDelete() {
+    return this.notImplemented("SqlDelete");
+  }
 
-    parseAtomic() {
-        const t = this.peek();
-        if (t.type === "LITERAL_NUM" || t.type === "LITERAL_STR") return { type: "Literal", value: this.eat(t.type).value };
-        if (t.type === "IDENTIFIER") {
-            const id = this.eat("IDENTIFIER").value;
-            if (this.match("LPAREN")) return this.parseFunctionCall(id);
-            return { type: "Identifier", name: id };
-        }
-        if (t.type === "LPAREN") {
-            this.eat("LPAREN");
-            const expr = this.parseExpression();
-            this.eat("RPAREN");
-            return expr;
-        }
-        if (t.type === "CASE") return this.parseCase();
-        throw new Error(`Unknown atomic: ${t.type}`);
-    }
+  SqlUpdate() {
+    return this.notImplemented("SqlUpdate");
+  }
 
-    // --- 5. 関数と特殊構文 ---
-    parseFunctionCall(name) {
-        this.eat("LPAREN");
-        const args = [];
-        if (!this.match("RPAREN")) {
-            do {
-                if (this.match("COMMA")) this.eat("COMMA");
-                args.push(this.parseExpression());
-            } while (this.match("COMMA"));
-        }
-        this.eat("RPAREN");
-        return { type: "FunctionCall", name, args };
-    }
+  SqlMerge() {
+    return this.notImplemented("SqlMerge");
+  }
 
-    parseCase() {
-        this.eat("CASE");
-        const whens = [];
-        while (this.match("WHEN")) {
-            this.eat("WHEN");
-            const cond = this.parseExpression();
-            this.eat("THEN");
-            const res = this.parseExpression();
-            whens.push({ cond, res });
-        }
-        this.eat("ELSE");
-        const fallback = this.parseExpression();
-        this.eat("END");
-        return { type: "CaseExpr", whens, fallback };
-    }
+  WhenMatchedClause() {
+    return this.notImplemented("WhenMatchedClause");
+  }
 
-    // --- 6. データ型とリテラル (一部) ---
-    parseDataType() {
-        const typeName = this.eat("IDENTIFIER").value;
-        let precision = null;
-        if (this.match("LPAREN")) {
-            this.eat("LPAREN");
-            precision = this.eat("LITERAL_NUM").value;
-            this.eat("RPAREN");
-        }
-        return { typeName, precision };
-    }
-    
-    // 省略された細かいパーサー(SetOption, Explain等)
-    parseSqlSetOption() { const op = this.eat(this.peek().type).value; return { type: "SetOption", op, id: this.eat("IDENTIFIER").value }; }
-    parseOrderBy() { this.eat("ORDER"); this.eat("BY"); return "ORDER_BY_CLAUSE"; }
-    parseLimit() { this.eat("LIMIT"); return this.eat("LITERAL_NUM").value; }
-    parseWithClause() { this.eat("WITH"); return "WITH_CLAUSE"; }
+  WhenNotMatchedClause() {
+    return this.notImplemented("WhenNotMatchedClause");
+  }
+
+  Where() {
+    return this.notImplemented("Where");
+  }
+
+  OrderedQueryOrExpr() {
+    return this.notImplemented("OrderedQueryOrExpr");
+  }
+
+  QueryOrExpr() {
+    return this.notImplemented("QueryOrExpr");
+  }
+
+  OrderByLimitOpt() {
+    return this.notImplemented("OrderByLimitOpt");
+  }
+
+  LeafQueryOrExpr() {
+    return this.notImplemented("LeafQueryOrExpr");
+  }
+
+  LeafQuery() {
+    return this.notImplemented("LeafQuery");
+  }
+
+  ExplicitTable() {
+    return this.notImplemented("ExplicitTable");
+  }
+
+  TableConstructor() {
+    return this.notImplemented("TableConstructor");
+  }
+
+  RowConstructor() {
+    return this.notImplemented("RowConstructor");
+  }
+
+  WithList() {
+    return this.notImplemented("WithList");
+  }
+
+  SqlSelect() {
+    return this.notImplemented("SqlSelect");
+  }
+
+  SelectExpression() {
+    return this.notImplemented("SelectExpression");
+  }
+
+  GroupingElementList() {
+    return this.notImplemented("GroupingElementList");
+  }
+
+  WindowSpecification() {
+    return this.notImplemented("WindowSpecification");
+  }
+
+  WindowRange() {
+    return this.notImplemented("WindowRange");
+  }
+
+  WindowExclusion() {
+    return this.notImplemented("WindowExclusion");
+  }
+
+  OrderBy() {
+    return this.notImplemented("OrderBy");
+  }
+
+  OrderItemList() {
+    return this.notImplemented("OrderItemList");
+  }
+
+  LimitClause() {
+    return this.notImplemented("LimitClause");
+  }
+
+  OffsetClause() {
+    return this.notImplemented("OffsetClause");
+  }
+
+  FetchClause() {
+    return this.notImplemented("FetchClause");
+  }
+
+  FromClause() {
+    return this.notImplemented("FromClause");
+  }
+
+  JoinOrCommaTable() {
+    return this.notImplemented("JoinOrCommaTable");
+  }
+
+  JoinType() {
+    return this.notImplemented("JoinType");
+  }
+
+  JoinTable() {
+    return this.notImplemented("JoinTable");
+  }
+
+  TableRef() {
+    return this.notImplemented("TableRef");
+  }
+
+  TableRef1() {
+    return this.notImplemented("TableRef1");
+  }
+
+  TableRef2() {
+    return this.notImplemented("TableRef2");
+  }
+
+  TableRef3() {
+    return this.notImplemented("TableRef3");
+  }
+
+  Snapshot() {
+    return this.notImplemented("Snapshot");
+  }
+
+  ExtendTable() {
+    return this.notImplemented("ExtendTable");
+  }
+
+  ExtendList() {
+    return this.notImplemented("ExtendList");
+  }
+
+  Tablesample() {
+    return this.notImplemented("Tablesample");
+  }
+
+  Pivot() {
+    return this.notImplemented("Pivot");
+  }
+
+  Unpivot() {
+    return this.notImplemented("Unpivot");
+  }
+
+  MatchRecognize() {
+    return this.notImplemented("MatchRecognize");
+  }
+
+  Expression() {
+    return this.notImplemented("Expression");
+  }
+
+  Expression2() {
+    return this.notImplemented("Expression2");
+  }
+
+  RowExpressionExtension() {
+    return this.notImplemented("RowExpressionExtension");
+  }
+
+  BinaryRowOperator() {
+    return this.notImplemented("BinaryRowOperator");
+  }
+
+  BinaryMultisetOperator() {
+    return this.notImplemented("BinaryMultisetOperator");
+  }
+
+  PrefixRowOperator() {
+    return this.notImplemented("PrefixRowOperator");
+  }
+
+  PostfixRowOperator() {
+    return this.notImplemented("PostfixRowOperator");
+  }
+
+  Expression3() {
+    return this.notImplemented("Expression3");
+  }
+
+  AtomicRowExpression() {
+    return this.notImplemented("AtomicRowExpression");
+  }
+
+  BuiltinFunctionCall() {
+    return this.notImplemented("BuiltinFunctionCall");
+  }
+
+  JsonApiCommonSyntax() {
+    return this.notImplemented("JsonApiCommonSyntax");
+  }
+
+  JsonReturningClause() {
+    return this.notImplemented("JsonReturningClause");
+  }
+
+  JsonExistsFunctionCall() {
+    return this.notImplemented("JsonExistsFunctionCall");
+  }
+
+  JsonExistsErrorBehavior() {
+    return this.notImplemented("JsonExistsErrorBehavior");
+  }
+
+  JsonValueFunctionCall() {
+    return this.notImplemented("JsonValueFunctionCall");
+  }
+
+  JsonValueEmptyOrErrorBehavior() {
+    return this.notImplemented("JsonValueEmptyOrErrorBehavior");
+  }
+
+  JsonQueryFunctionCall() {
+    return this.notImplemented("JsonQueryFunctionCall");
+  }
+
+  JsonQueryWrapperBehavior() {
+    return this.notImplemented("JsonQueryWrapperBehavior");
+  }
+
+  JsonQueryEmptyOrErrorBehavior() {
+    return this.notImplemented("JsonQueryEmptyOrErrorBehavior");
+  }
+
+  JsonObjectFunctionCall() {
+    return this.notImplemented("JsonObjectFunctionCall");
+  }
+
+  JsonObjectAggFunctionCall() {
+    return this.notImplemented("JsonObjectAggFunctionCall");
+  }
+
+  JsonArrayFunctionCall() {
+    return this.notImplemented("JsonArrayFunctionCall");
+  }
+
+  JsonArrayAggFunctionCall() {
+    return this.notImplemented("JsonArrayAggFunctionCall");
+  }
+
+  CaseExpression() {
+    return this.notImplemented("CaseExpression");
+  }
+
+  MultisetConstructor() {
+    return this.notImplemented("MultisetConstructor");
+  }
+
+  ArrayConstructor() {
+    return this.notImplemented("ArrayConstructor");
+  }
+
+  MapConstructor() {
+    return this.notImplemented("MapConstructor");
+  }
+
+  DataType() {
+    return this.notImplemented("DataType");
+  }
+
+  TypeName() {
+    return this.notImplemented("TypeName");
+  }
+
+  SqlTypeName() {
+    return this.notImplemented("SqlTypeName");
+  }
+
+  SqlTypeName1() {
+    return this.notImplemented("SqlTypeName1");
+  }
+
+  SqlTypeName2() {
+    return this.notImplemented("SqlTypeName2");
+  }
+
+  SqlTypeName3() {
+    return this.notImplemented("SqlTypeName3");
+  }
+
+  CharacterTypeName() {
+    return this.notImplemented("CharacterTypeName");
+  }
+
+  DateTimeTypeName() {
+    return this.notImplemented("DateTimeTypeName");
+  }
+
+  TimeZoneOpt() {
+    return this.notImplemented("TimeZoneOpt");
+  }
+
+  RowTypeName() {
+    return this.notImplemented("RowTypeName");
+  }
+
+  MapTypeName() {
+    return this.notImplemented("MapTypeName");
+  }
+
+  Literal() {
+    return this.notImplemented("Literal");
+  }
+
+  LiteralOrIntervalExpression() {
+    return this.notImplemented("LiteralOrIntervalExpression");
+  }
+
+  IntervalLiteralOrExpression() {
+    return this.notImplemented("IntervalLiteralOrExpression");
+  }
+
+  NonIntervalLiteral() {
+    return this.notImplemented("NonIntervalLiteral");
+  }
+
+  NumericLiteral() {
+    return this.notImplemented("NumericLiteral");
+  }
+
+  UnsignedNumericLiteral() {
+    return this.notImplemented("UnsignedNumericLiteral");
+  }
+
+  SpecialLiteral() {
+    return this.notImplemented("SpecialLiteral");
+  }
+
+  DateTimeLiteral() {
+    return this.notImplemented("DateTimeLiteral");
+  }
+
+  IntervalLiteral() {
+    return this.notImplemented("IntervalLiteral");
+  }
+
+  IntervalQualifier() {
+    return this.notImplemented("IntervalQualifier");
+  }
+
+  IntervalQualifierStart() {
+    return this.notImplemented("IntervalQualifierStart");
+  }
+
+  AddSetOpQuery() {
+    return this.notImplemented("AddSetOpQuery");
+  }
+
+  BinaryQueryOperator() {
+    return this.notImplemented("BinaryQueryOperator");
+  }
+
+  AddSetOpQueryOrExpr() {
+    return this.notImplemented("AddSetOpQueryOrExpr");
+  }
+
+  Query() {
+    return this.notImplemented("Query");
+  }
+
+  SqlQueryEof() {
+    return this.notImplemented("SqlQueryEof");
+  }
+
+  ExprOrJoinOrOrderedQuery() {
+    return this.notImplemented("ExprOrJoinOrOrderedQuery");
+  }
+
+  ParenthesizedExpression() {
+    return this.notImplemented("ParenthesizedExpression");
+  }
+
+  ParenthesizedQueryOrCommaList() {
+    return this.notImplemented("ParenthesizedQueryOrCommaList");
+  }
+
+  ParenthesizedQueryOrCommaListWithDefault() {
+    return this.notImplemented("ParenthesizedQueryOrCommaListWithDefault");
+  }
+
+  ExpressionCommaList() {
+    return this.notImplemented("ExpressionCommaList");
+  }
+
+  SimpleIdentifier() {
+    return this.notImplemented("SimpleIdentifier");
+  }
+
+  SimpleIdentifierOrListOrEmpty() {
+    return this.notImplemented("SimpleIdentifierOrListOrEmpty");
+  }
+
+  ParenthesizedSimpleIdentifierList() {
+    return this.notImplemented("ParenthesizedSimpleIdentifierList");
+  }
+
+  CompoundIdentifier() {
+    return this.notImplemented("CompoundIdentifier");
+  }
+
+  CompoundTableIdentifier() {
+    return this.notImplemented("CompoundTableIdentifier");
+  }
+
+  Identifier() {
+    return this.notImplemented("Identifier");
+  }
+
+  SimpleIdentifierFromStringLiteral() {
+    return this.notImplemented("SimpleIdentifierFromStringLiteral");
+  }
+
+  ParenthesizedCompoundIdentifierList() {
+    return this.notImplemented("ParenthesizedCompoundIdentifierList");
+  }
+
+  NotNullOpt() {
+    return this.notImplemented("NotNullOpt");
+  }
+
+  TableHints() {
+    return this.notImplemented("TableHints");
+  }
+
+  SqlSelectKeywords() {
+    return this.notImplemented("SqlSelectKeywords");
+  }
+
+  ParenthesizedLiteralOptionCommaList() {
+    return this.notImplemented("ParenthesizedLiteralOptionCommaList");
+  }
+
+  ParenthesizedKeyValueOptionCommaList() {
+    return this.notImplemented("ParenthesizedKeyValueOptionCommaList");
+  }
+
+  GroupBy() {
+    return this.notImplemented("GroupBy");
+  }
+
+  Having() {
+    return this.notImplemented("Having");
+  }
+
+  Window() {
+    return this.notImplemented("Window");
+  }
+
+  Qualify() {
+    return this.notImplemented("Qualify");
+  }
+
+  TableOverOpt() {
+    return this.notImplemented("TableOverOpt");
+  }
+
+  Over() {
+    return this.notImplemented("Over");
+  }
+
+  ExtendedTableRef() {
+    return this.notImplemented("ExtendedTableRef");
+  }
+
+  TableFunctionCall() {
+    return this.notImplemented("TableFunctionCall");
+  }
+
+  ImplicitTableFunctionCallArgs() {
+    return this.notImplemented("ImplicitTableFunctionCallArgs");
+  }
+
+  NamedRoutineCall() {
+    return this.notImplemented("NamedRoutineCall");
+  }
+
+  FunctionParameterList() {
+    return this.notImplemented("FunctionParameterList");
+  }
+
+  AllOrDistinct() {
+    return this.notImplemented("AllOrDistinct");
+  }
+
+  UnquantifiedFunctionParameterList() {
+    return this.notImplemented("UnquantifiedFunctionParameterList");
+  }
+
+  AddArg0() {
+    return this.notImplemented("AddArg0");
+  }
+
+  AddArg() {
+    return this.notImplemented("AddArg");
+  }
+
+  AddExpression() {
+    return this.notImplemented("AddExpression");
+  }
+
+  AddExpression2b() {
+    return this.notImplemented("AddExpression2b");
+  }
+
+  AddExpressions() {
+    return this.notImplemented("AddExpressions");
+  }
+
+  AddGroupingElement() {
+    return this.notImplemented("AddGroupingElement");
+  }
+
+  AddWindowSpec() {
+    return this.notImplemented("AddWindowSpec");
+  }
+
+  AddWithItem() {
+    return this.notImplemented("AddWithItem");
+  }
+
+  AddSelectItem() {
+    return this.notImplemented("AddSelectItem");
+  }
+
+  AddRowConstructor() {
+    return this.notImplemented("AddRowConstructor");
+  }
+
+  AddSimpleIdentifiers() {
+    return this.notImplemented("AddSimpleIdentifiers");
+  }
+
+  AddIdentifierSegment() {
+    return this.notImplemented("AddIdentifierSegment");
+  }
+
+  AddTableIdentifierSegment() {
+    return this.notImplemented("AddTableIdentifierSegment");
+  }
+
+  AddOrderItem() {
+    return this.notImplemented("AddOrderItem");
+  }
+
+  AddMeasureColumn() {
+    return this.notImplemented("AddMeasureColumn");
+  }
+
+  AddSubsetDefinition() {
+    return this.notImplemented("AddSubsetDefinition");
+  }
+
+  AddPivotAgg() {
+    return this.notImplemented("AddPivotAgg");
+  }
+
+  AddPivotValue() {
+    return this.notImplemented("AddPivotValue");
+  }
+
+  AddUnpivotValue() {
+    return this.notImplemented("AddUnpivotValue");
+  }
+
+  AddKeyValueOption() {
+    return this.notImplemented("AddKeyValueOption");
+  }
+
+  AddOptionValue() {
+    return this.notImplemented("AddOptionValue");
+  }
+
+  AddColumnType() {
+    return this.notImplemented("AddColumnType");
+  }
+
+  AddCompoundIdentifierType() {
+    return this.notImplemented("AddCompoundIdentifierType");
+  }
+
+  AddCompoundIdentifierTypes() {
+    return this.notImplemented("AddCompoundIdentifierTypes");
+  }
+
+  AddHint() {
+    return this.notImplemented("AddHint");
+  }
+
+  Default() {
+    return this.notImplemented("Default");
+  }
+
+  TableParam() {
+    return this.notImplemented("TableParam");
+  }
+
+  PartitionedQueryOrQueryOrExpr() {
+    return this.notImplemented("PartitionedQueryOrQueryOrExpr");
+  }
+
+  PartitionedByAndOrderBy() {
+    return this.notImplemented("PartitionedByAndOrderBy");
+  }
+
+  OrderByOfSetSemanticsTable() {
+    return this.notImplemented("OrderByOfSetSemanticsTable");
+  }
+
+  NamedFunctionCall() {
+    return this.notImplemented("NamedFunctionCall");
+  }
+
+  NamedCall() {
+    return this.notImplemented("NamedCall");
+  }
+
+  FunctionName() {
+    return this.notImplemented("FunctionName");
+  }
+
+  ReservedFunctionName() {
+    return this.notImplemented("ReservedFunctionName");
+  }
+
+  NonReservedJdbcFunctionName() {
+    return this.notImplemented("NonReservedJdbcFunctionName");
+  }
+
+  NonReservedKeyWord() {
+    return this.notImplemented("NonReservedKeyWord");
+  }
+
+  NonReservedKeyWord0of3() {
+    return this.notImplemented("NonReservedKeyWord0of3");
+  }
+
+  NonReservedKeyWord1of3() {
+    return this.notImplemented("NonReservedKeyWord1of3");
+  }
+
+  NonReservedKeyWord2of3() {
+    return this.notImplemented("NonReservedKeyWord2of3");
+  }
+
+  StringAggFunctionCall() {
+    return this.notImplemented("StringAggFunctionCall");
+  }
+
+  PercentileFunctionCall() {
+    return this.notImplemented("PercentileFunctionCall");
+  }
+
+  GroupByWindowingCall() {
+    return this.notImplemented("GroupByWindowingCall");
+  }
+
+  MatchRecognizeFunctionCall() {
+    return this.notImplemented("MatchRecognizeFunctionCall");
+  }
+
+  MatchRecognizeCallWithModifier() {
+    return this.notImplemented("MatchRecognizeCallWithModifier");
+  }
+
+  MatchRecognizeNavigationLogical() {
+    return this.notImplemented("MatchRecognizeNavigationLogical");
+  }
+
+  MatchRecognizeNavigationPhysical() {
+    return this.notImplemented("MatchRecognizeNavigationPhysical");
+  }
+
+  withinDistinct() {
+    return this.notImplemented("withinDistinct");
+  }
+
+  withinGroup() {
+    return this.notImplemented("withinGroup");
+  }
+
+  NullTreatment() {
+    return this.notImplemented("NullTreatment");
+  }
+
+  nullTreatment() {
+    return this.notImplemented("nullTreatment");
+  }
+
+  JdbcFunctionCall() {
+    return this.notImplemented("JdbcFunctionCall");
+  }
+
+  DynamicParam() {
+    return this.notImplemented("DynamicParam");
+  }
+
+  CursorExpression() {
+    return this.notImplemented("CursorExpression");
+  }
+
+  ContextVariable() {
+    return this.notImplemented("ContextVariable");
+  }
+
+  NewSpecification() {
+    return this.notImplemented("NewSpecification");
+  }
+
+  SequenceExpression() {
+    return this.notImplemented("SequenceExpression");
+  }
+
+  SimpleIdentifierOrList() {
+    return this.notImplemented("SimpleIdentifierOrList");
+  }
+
+  PatternExpression() {
+    return this.notImplemented("PatternExpression");
+  }
+
+  PatternTerm() {
+    return this.notImplemented("PatternTerm");
+  }
+
+  PatternFactor() {
+    return this.notImplemented("PatternFactor");
+  }
+
+  PatternPrimary() {
+    return this.notImplemented("PatternPrimary");
+  }
+
+  PatternDefinition() {
+    return this.notImplemented("PatternDefinition");
+  }
+
+  StringLiteral() {
+    return this.notImplemented("StringLiteral");
+  }
+
+  SimpleStringLiteral() {
+    return this.notImplemented("SimpleStringLiteral");
+  }
+
+  UnsignedIntLiteral() {
+    return this.notImplemented("UnsignedIntLiteral");
+  }
+
+  IntLiteral() {
+    return this.notImplemented("IntLiteral");
+  }
+
+  UnsignedNumericLiteralOrParam() {
+    return this.notImplemented("UnsignedNumericLiteralOrParam");
+  }
+
+  TimeUnitOrName() {
+    return this.notImplemented("TimeUnitOrName");
+  }
+
+  TimeUnit() {
+    return this.notImplemented("TimeUnit");
+  }
+
+  weekdayName() {
+    return this.notImplemented("weekdayName");
+  }
+
+  Year() {
+    return this.notImplemented("Year");
+  }
+
+  Quarter() {
+    return this.notImplemented("Quarter");
+  }
+
+  Month() {
+    return this.notImplemented("Month");
+  }
+
+  Week() {
+    return this.notImplemented("Week");
+  }
+
+  Day() {
+    return this.notImplemented("Day");
+  }
+
+  Hour() {
+    return this.notImplemented("Hour");
+  }
+
+  Minute() {
+    return this.notImplemented("Minute");
+  }
+
+  Second() {
+    return this.notImplemented("Second");
+  }
+
+  IntervalWithoutQualifier() {
+    return this.notImplemented("IntervalWithoutQualifier");
+  }
+
+  JsonRepresentation() {
+    return this.notImplemented("JsonRepresentation");
+  }
+
+  JsonInputClause() {
+    return this.notImplemented("JsonInputClause");
+  }
+
+  JsonPathSpec() {
+    return this.notImplemented("JsonPathSpec");
+  }
+
+  JsonName() {
+    return this.notImplemented("JsonName");
+  }
+
+  JsonNameAndValue() {
+    return this.notImplemented("JsonNameAndValue");
+  }
+
+  JsonConstructorNullClause() {
+    return this.notImplemented("JsonConstructorNullClause");
+  }
+
+  JsonOutputClause() {
+    return this.notImplemented("JsonOutputClause");
+  }
+
+  LambdaExpression() {
+    return this.notImplemented("LambdaExpression");
+  }
+
+  PeriodConstructor() {
+    return this.notImplemented("PeriodConstructor");
+  }
+
+  ArrayLiteral() {
+    return this.notImplemented("ArrayLiteral");
+  }
+
+  PrecisionOpt() {
+    return this.notImplemented("PrecisionOpt");
+  }
+
+  NullableOptDefaultTrue() {
+    return this.notImplemented("NullableOptDefaultTrue");
+  }
+
+  NullableOptDefaultFalse() {
+    return this.notImplemented("NullableOptDefaultFalse");
+  }
+
+  JsonArrayAggOrderByClause() {
+    return this.notImplemented("JsonArrayAggOrderByClause");
+  }
+
+  ContainsSubstrFunctionCall() {
+    return this.notImplemented("ContainsSubstrFunctionCall");
+  }
+
+  DateDiffFunctionCall() {
+    return this.notImplemented("DateDiffFunctionCall");
+  }
+
+  TimestampAddFunctionCall() {
+    return this.notImplemented("TimestampAddFunctionCall");
+  }
+
+  TimestampDiffFunctionCall() {
+    return this.notImplemented("TimestampDiffFunctionCall");
+  }
+
+  TimestampDiff3FunctionCall() {
+    return this.notImplemented("TimestampDiff3FunctionCall");
+  }
+
+  DatetimeDiffFunctionCall() {
+    return this.notImplemented("DatetimeDiffFunctionCall");
+  }
+
+  DateTruncFunctionCall() {
+    return this.notImplemented("DateTruncFunctionCall");
+  }
+
+  DatetimeTruncFunctionCall() {
+    return this.notImplemented("DatetimeTruncFunctionCall");
+  }
+
+  TimestampTruncFunctionCall() {
+    return this.notImplemented("TimestampTruncFunctionCall");
+  }
+
+  TimeDiffFunctionCall() {
+    return this.notImplemented("TimeDiffFunctionCall");
+  }
+
+  TimeTruncFunctionCall() {
+    return this.notImplemented("TimeTruncFunctionCall");
+  }
+
+  DateTimeConstructorCall() {
+    return this.notImplemented("DateTimeConstructorCall");
+  }
+
+  FloorCeilOptions() {
+    return this.notImplemented("FloorCeilOptions");
+  }
+
+  StandardFloorCeilOptions() {
+    return this.notImplemented("StandardFloorCeilOptions");
+  }
+
+  JdbcOdbcDataTypeName() {
+    return this.notImplemented("JdbcOdbcDataTypeName");
+  }
+
+  JdbcOdbcDataType() {
+    return this.notImplemented("JdbcOdbcDataType");
+  }
+
+  CollectionsTypeName() {
+    return this.notImplemented("CollectionsTypeName");
+  }
+
+  CollateClause() {
+    return this.notImplemented("CollateClause");
+  }
+
+  UnusedExtension() {
+    return this.notImplemented("UnusedExtension");
+  }
+
+  MeasureColumnCommaList() {
+    return this.notImplemented("MeasureColumnCommaList");
+  }
+
+  SubsetDefinitionCommaList() {
+    return this.notImplemented("SubsetDefinitionCommaList");
+  }
+
+  PatternDefinitionCommaList() {
+    return this.notImplemented("PatternDefinitionCommaList");
+  }
+
+  Natural() {
+    return this.notImplemented("Natural");
+  }
+
+  Scope() {
+    return this.notImplemented("Scope");
+  }
+
+  comp() {
+    return this.notImplemented("comp");
+  }
+
+  periodOperator() {
+    return this.notImplemented("periodOperator");
+  }
+
 }
 
-/**
- * 実行テスト
- */
-const sql = "SELECT id, name FROM users LEFT JOIN orders ON users.id = orders.user_id WHERE status = 'active' AND price > 100;";
-const lexer = new CalciteLexer(sql);
-const tokens = lexer.tokenize();
-const parser = new CalciteParser(tokens);
+module.exports = {
+  CalciteLexer,
+  CalciteParser,
+};
 
-try {
-    const ast = parser.parseSqlStmtList();
-    console.log(JSON.stringify(ast, null, 2));
-} catch (e) {
+if (require.main === module) {
+  const src = "SELECT 1";
+  const lexer = new CalciteLexer(src);
+  const tokens = lexer.tokenize();
+  const parser = new CalciteParser(tokens);
+  try {
+    parser.SqlStmtList();
+  } catch (e) {
     console.error(e.message);
+  }
 }
