@@ -7,23 +7,29 @@ SqlStmtList        ::= [ SqlStmt { ";" [ SqlStmt ] } ] <EOF>
 SqlStmtEof         ::= SqlStmt <EOF>
 SqlExpressionEof   ::= Expression <EOF>
 
-SqlStmt            ::= SqlSetOption | SqlAlter | OrderedQueryOrExpr | SqlExplain 
-                     | SqlDescribe | SqlInsert | SqlDelete | SqlUpdate | SqlMerge 
+SqlStmt            ::= SqlSetOption | SqlAlter | OrderedQueryOrExpr | SqlExplain
+                     | SqlDescribe | SqlInsert | SqlDelete | SqlUpdate | SqlMerge
                      | SqlProcedureCall
 
 SqlSetOption       ::= "SET" CompoundIdentifier "=" ( Literal | SimpleIdentifier | "ON" )
                      | "RESET" ( CompoundIdentifier | "ALL" )
 SqlAlter           ::= "ALTER" ( "SYSTEM" | "SESSION" ) SqlSetOption
 
-SqlExplain         ::= "EXPLAIN" "PLAN" [ ExplainDetailLevel ] [ ExplainDepth ] [ "AS" ( "XML" | "JSON" | "DOT" ) ] "FOR" SqlQueryOrDml
+SqlExplain         ::= "EXPLAIN" "PLAN"
+                       [ ExplainDetailLevel ]
+                       [ ExplainDepth ]
+                       [ "AS" ( "XML" | "JSON" | "DOT" ) ]
+                       "FOR" SqlQueryOrDml
 ExplainDetailLevel ::= ( "EXCLUDING" | "INCLUDING" [ "ALL" ] ) "ATTRIBUTES"
 ExplainDepth       ::= "WITH" "TYPE" | "WITH" "IMPLEMENTATION" | "WITHOUT" "IMPLEMENTATION"
                      | /* empty (default: PHYSICAL) */
 SqlQueryOrDml      ::= OrderedQueryOrExpr | SqlInsert | SqlDelete | SqlUpdate | SqlMerge
 
-SqlDescribe        ::= "DESCRIBE" ( ( "DATABASE" | "CATALOG" | "SCHEMA" ) CompoundIdentifier
-                                  | [ "TABLE" ] CompoundIdentifier [ SimpleIdentifier ]
-                                  | [ "STATEMENT" ] SqlQueryOrDml )
+SqlDescribe        ::= "DESCRIBE"
+                       ( ( "DATABASE" | "CATALOG" | "SCHEMA" ) CompoundIdentifier
+                       | [ "TABLE" ] CompoundIdentifier [ SimpleIdentifier ]
+                       | [ "STATEMENT" ] SqlQueryOrDml
+                       )
 
 SqlProcedureCall   ::= "CALL" NamedRoutineCall
 
@@ -33,23 +39,27 @@ SqlProcedureCall   ::= "CALL" NamedRoutineCall
 
 ```ebnf
 SqlInsert          ::= ( "INSERT" | "UPSERT" ) SqlInsertKeywords
-                       "INTO" CompoundTableIdentifier [ TableHints ] [ ExtendTable ]
+                       "INTO" CompoundTableIdentifier
+                       [ TableHints ] [ ExtendTable ]
                        [ ParenthesizedCompoundIdentifierList ]
                        OrderedQueryOrExpr
 
 SqlInsertKeywords  ::= /* empty (dialect-specific) */
 
-SqlDelete          ::= "DELETE" "FROM" CompoundTableIdentifier [ TableHints ] [ ExtendTable ]
+SqlDelete          ::= "DELETE" "FROM" CompoundTableIdentifier
+                       [ TableHints ] [ ExtendTable ]
                        [ [ "AS" ] SimpleIdentifier ]
                        [ Where ]
 
-SqlUpdate          ::= "UPDATE" CompoundTableIdentifier [ TableHints ] [ ExtendTable ]
+SqlUpdate          ::= "UPDATE" CompoundTableIdentifier
+                       [ TableHints ] [ ExtendTable ]
                        [ [ "AS" ] SimpleIdentifier ]
                        "SET" CompoundIdentifier "=" Expression
                        { "," CompoundIdentifier "=" Expression }
                        [ Where ]
 
-SqlMerge           ::= "MERGE" "INTO" CompoundTableIdentifier [ TableHints ] [ ExtendTable ]
+SqlMerge           ::= "MERGE" "INTO" CompoundTableIdentifier
+                       [ TableHints ] [ ExtendTable ]
                        [ [ "AS" ] SimpleIdentifier ]
                        "USING" TableRef
                        "ON" Expression
@@ -74,7 +84,7 @@ Where              ::= "WHERE" Expression
 
 ```ebnf
 OrderedQueryOrExpr ::= QueryOrExpr OrderByLimitOpt
-QueryOrExpr        ::= [ WithClause ] LeafQueryOrExpr { AddSetOpQuery }
+QueryOrExpr        ::= [ WithList ] LeafQueryOrExpr { AddSetOpQuery }
 OrderByLimitOpt    ::= [ OrderBy ]
                        [ LimitClause [ OffsetClause ]
                        | OffsetClause ( [ LimitClause ] | FetchClause )
@@ -87,35 +97,28 @@ TableConstructor   ::= ( "VALUES" | "VALUE" ) RowConstructor { "," RowConstructo
 RowConstructor     ::= "(" "ROW" ParenthesizedQueryOrCommaListWithDefault ")"
                      | [ "ROW" ] ParenthesizedQueryOrCommaListWithDefault
                      | Expression
-WithClause         ::= "WITH" [ "RECURSIVE" ] WithItem { "," WithItem }
-WithItem           ::= SimpleIdentifier [ "(" SimpleIdentifierList ")" ] "AS" ParenthesizedExpression
+WithList           ::= "WITH" [ "RECURSIVE" ] AddWithItem { "," AddWithItem }
 
-SqlSelect          ::= "SELECT" [ Hint ] [ SqlSelectKeywords ] [ "STREAM" ] [ "ALL" | "DISTINCT" ]
-                       SelectItem { "," SelectItem }
+SqlSelect          ::= "SELECT"
+                       [ "/*+" AddHint { "," AddHint } "*/" ]
+                       [ SqlSelectKeywords ]
+                       [ "STREAM" ]
+                       [ "ALL" | "DISTINCT" ]
+                       AddSelectItem { "," AddSelectItem }
                        ( "FROM" FromClause
-                         [ "WHERE" Expression ]
-                         [ "GROUP" "BY" [ "DISTINCT" | "ALL" ] GroupingElementList ]
-                         [ "HAVING" Expression ]
-                         [ "WINDOW" WindowDeclaration { "," WindowDeclaration } ]
-                         [ "QUALIFY" Expression ]
+                         [ Where ]
+                         [ GroupBy ]
+                         [ Having ]
+                         [ Window ]
+                         [ Qualify ]
                        | /* empty */
                        )
 
-SelectItem         ::= ( "*" | Expression )
-                       [ [ "AS" [ "MEASURE" ] ]
-                         ( SimpleIdentifier | SimpleIdentifierFromStringLiteral )
-                       ]
 SelectExpression   ::= "*" | Expression
-GroupingElementList::= GroupingElement { "," GroupingElement }
-GroupingElement    ::= "GROUPING" "SETS" "(" GroupingElementList ")"
-                     | "ROLLUP" "(" ExpressionList ")"
-                     | "CUBE" "(" ExpressionList ")"
-                     | "(" ")"
-                     | Expression
+GroupingElementList::= AddGroupingElement { "," AddGroupingElement }
 
-WindowDeclaration  ::= SimpleIdentifier "AS" WindowSpecification
 WindowSpecification::= "(" [ SimpleIdentifier ] 
-                           [ "PARTITION" "BY" ExpressionList ] 
+                           [ "PARTITION" "BY" ExpressionCommaList ] 
                            [ OrderBy ] 
                            [ ( "ROWS" | "RANGE" )
                              ( "BETWEEN" WindowRange "AND" WindowRange | WindowRange )
@@ -130,8 +133,7 @@ WindowExclusion    ::= "EXCLUDE" ( "CURRENT" "ROW" | "NO" "OTHERS" | "GROUP" | "
                      | /* empty (default: NO OTHERS) */
 
 OrderBy            ::= "ORDER" "BY" OrderItemList
-OrderItemList      ::= OrderItem { "," OrderItem }
-OrderItem          ::= Expression [ "AS" ( SimpleIdentifier | SimpleIdentifierFromStringLiteral ) ] [ "ASC" | "DESC" ] [ "NULLS" ( "FIRST" | "LAST" ) ]
+OrderItemList      ::= AddOrderItem { "," AddOrderItem }
 
 LimitClause        ::= "LIMIT" (
                          UnsignedNumericLiteralOrParam "," ( UnsignedNumericLiteralOrParam | "ALL" )
@@ -159,52 +161,64 @@ JoinType           ::= "JOIN" | "INNER" "JOIN"
                      | "CROSS" "JOIN" 
                      | "ASOF" "JOIN"
 
-JoinTable          ::= [ "NATURAL" ] JoinType TableRef [ JoinCondition ]
-JoinCondition      ::= [ "MATCH_CONDITION" Expression ] "ON" Expression  /* ASOF JOINのみ */
-                     | "USING" "(" SimpleIdentifierList ")"
+JoinTable          ::= [ "NATURAL" ] JoinType TableRef
+                       ( [ "MATCH_CONDITION" Expression ] "ON" Expression  /* ASOF JOINのみ */
+                       | "USING" ParenthesizedSimpleIdentifierList
+                       | /* empty */
+                       )
 
-TableRef           ::= TableRefPrimary
-                       [ PivotClause ] [ UnpivotClause ]
-                       [ [ "AS" ] SimpleIdentifier [ "(" SimpleIdentifierList ")" ] ]
-                       [ TablesampleClause ]
-TableRefPrimary    ::= CompoundTableIdentifier
-                         ( ImplicitTableFunctionCallArgs
-                         | [ TableHints ] [ ExtendTable ] [ OverClause ]
-                           [ SnapshotClause ] [ MatchRecognizeClause ]
-                         )
-                     | [ "LATERAL" ] "(" OrderedQueryOrExpr ")" [ OverClause ] [ MatchRecognizeClause ]
-                     | [ "LATERAL" ] "UNNEST" "(" ExpressionList ")" [ "WITH" "ORDINALITY" ]
+TableRef           ::= TableRef3
+TableRef1          ::= TableRef3
+TableRef2          ::= TableRef3
+TableRef3          ::= CompoundTableIdentifier
+                       ( ImplicitTableFunctionCallArgs
+                       | [ TableHints ] [ ExtendTable ] [ TableOverOpt ]
+                         [ Snapshot ] [ MatchRecognize ]
+                       )
+                     | [ "LATERAL" ] "(" OrderedQueryOrExpr ")"
+                       [ TableOverOpt ] [ MatchRecognize ]
+                     | [ "LATERAL" ] "UNNEST" "(" ExpressionCommaList ")"
+                       [ "WITH" "ORDINALITY" ]
                      | [ "LATERAL" ] TableFunctionCall
                      | ExtendedTableRef
+                     [ Pivot ] [ Unpivot ]
+                     [ [ "AS" ] SimpleIdentifier [ ParenthesizedSimpleIdentifierList ] ]
+                     [ Tablesample ]
 
-SnapshotClause     ::= "FOR" "SYSTEM_TIME" "AS" "OF" Expression
-ExtendTable        ::= [ "EXTEND" ] "(" ColumnType { "," ColumnType } ")"
-ColumnType         ::= CompoundIdentifier DataType [ "NOT" "NULL" ]
-ExtendList         ::= "(" ColumnType { "," ColumnType } ")"
+Snapshot           ::= "FOR" "SYSTEM_TIME" "AS" "OF" Expression
+ExtendTable        ::= [ "EXTEND" ] ExtendList
+ExtendList         ::= "(" AddColumnType { "," AddColumnType } ")"
 
-TablesampleClause  ::= "TABLESAMPLE" ( "SUBSTITUTE" "(" StringLiteral ")" 
-                                       | ( "BERNOULLI" | "SYSTEM" ) "(" UnsignedNumericLiteral ")" [ "REPEATABLE" "(" IntLiteral ")" ] )
+Tablesample        ::= "TABLESAMPLE"
+                       ( "SUBSTITUTE" "(" StringLiteral ")"
+                       | ( "BERNOULLI" | "SYSTEM" ) "(" UnsignedNumericLiteral ")"
+                         [ "REPEATABLE" "(" IntLiteral ")" ]
+                       )
 
-PivotClause        ::= "PIVOT" "(" PivotAgg { "," PivotAgg } "FOR" SimpleIdentifierOrList "IN" "(" PivotValue { "," PivotValue } ")" ")"
-UnpivotClause      ::= "UNPIVOT" [ ( "INCLUDE" | "EXCLUDE" ) "NULLS" ] "(" SimpleIdentifierOrList "FOR" SimpleIdentifierOrList "IN" "(" UnpivotValue { "," UnpivotValue } ")" ")"
+Pivot              ::= "PIVOT" "(" AddPivotAgg { "," AddPivotAgg } "FOR"
+                       SimpleIdentifierOrList "IN"
+                       "(" AddPivotValue { "," AddPivotValue } ")" ")"
+Unpivot            ::= "UNPIVOT" [ ( "INCLUDE" | "EXCLUDE" ) "NULLS" ]
+                       "(" SimpleIdentifierOrList "FOR" SimpleIdentifierOrList "IN"
+                       "(" AddUnpivotValue { "," AddUnpivotValue } ")" ")"
 
-MatchRecognizeClause ::= "MATCH_RECOGNIZE" "(" 
-                           [ "PARTITION" "BY" ExpressionList ] 
-                           [ OrderBy ] 
-                           [ "MEASURES" MeasureColumn { "," MeasureColumn } ] 
-                           [ ( "ONE" "ROW" | "ALL" "ROWS" ) "PER" "MATCH" ]
-                           [ "AFTER" "MATCH" "SKIP"
-                               ( "PAST" "LAST" "ROW"
-                               | "TO" "NEXT" "ROW"
-                               | "TO" "FIRST" SimpleIdentifier
-                               | "TO" [ "LAST" ] SimpleIdentifier
-                               )
-                           ]
-                           "PATTERN" "(" [ "^" ] PatternExpression [ "$" ] ")" 
-                           [ "WITHIN" IntervalLiteral ] 
-                           [ "SUBSET" SubsetDefinition { "," SubsetDefinition } ]
-                           "DEFINE" PatternDefinition { "," PatternDefinition } 
-                         ")"
+MatchRecognize     ::= "MATCH_RECOGNIZE" "("
+                       [ "PARTITION" "BY" ExpressionCommaList ]
+                       [ OrderBy ]
+                       [ "MEASURES" AddMeasureColumn { "," AddMeasureColumn } ]
+                       [ ( "ONE" "ROW" | "ALL" "ROWS" ) "PER" "MATCH" ]
+                       [ "AFTER" "MATCH" "SKIP"
+                         ( "PAST" "LAST" "ROW"
+                         | "TO" "NEXT" "ROW"
+                         | "TO" "FIRST" SimpleIdentifier
+                         | "TO" [ "LAST" ] SimpleIdentifier
+                         )
+                       ]
+                       "PATTERN" "(" [ "^" ] PatternExpression [ "$" ] ")"
+                       [ "WITHIN" IntervalLiteral ]
+                       [ "SUBSET" AddSubsetDefinition { "," AddSubsetDefinition } ]
+                       "DEFINE" PatternDefinition { "," PatternDefinition }
+                       ")"
 
 ```
 
@@ -212,28 +226,22 @@ MatchRecognizeClause ::= "MATCH_RECOGNIZE" "("
 
 ```ebnf
 Expression         ::= Expression2
-Expression2        ::= Expression2b
+Expression2        ::= AddExpression2b
                        {
-                         InPredicate
-                       | BetweenPredicate
-                       | LikePredicate [ "ESCAPE" Expression3 ]
-                       | BinaryRowOperator Expression2b
-                       | ItemAccess
+                         ( [ "NOT" ] "IN"
+                         | comp ( "SOME" | "ANY" | "ALL" )
+                         ) "(" ( OrderedQueryOrExpr | ExpressionCommaList ) ")"
+                       | [ "NOT" ] "BETWEEN" [ "SYMMETRIC" | "ASYMMETRIC" ]
+                         Expression2 "AND" Expression2
+                       | [ "NOT" ] ( "LIKE" | "ILIKE" | "RLIKE" | "SIMILAR" "TO" )
+                         Expression2 [ "ESCAPE" Expression3 ]
+                       | BinaryRowOperator AddExpression2b
+                       | "[" ( "OFFSET" | "ORDINAL" | "SAFE_OFFSET" | "SAFE_ORDINAL" )
+                           "(" Expression ")"
+                         | Expression
+                         "]" { "." SimpleIdentifier }
                        | PostfixRowOperator
                        }
-Expression2b       ::= { PrefixRowOperator } Expression3 { "." RowExpressionExtension }
-ComparisonOperator ::= "<" | "<=" | ">" | ">=" | "=" | "<>" | "!="
-
-InPredicate        ::= ( [ "NOT" ] "IN"
-                       | ComparisonOperator ( "SOME" | "ANY" | "ALL" )
-                       )
-                       "(" ( OrderedQueryOrExpr | ExpressionList ) ")"
-BetweenPredicate   ::= [ "NOT" ] "BETWEEN" [ "SYMMETRIC" | "ASYMMETRIC" ] Expression2 "AND" Expression2
-LikePredicate      ::= [ "NOT" ] ( "LIKE" | "ILIKE" | "RLIKE" | "SIMILAR" "TO" ) Expression2
-ItemAccess         ::= "[" ( "OFFSET" | "ORDINAL" | "SAFE_OFFSET" | "SAFE_ORDINAL" )
-                           "(" Expression ")" 
-                         | Expression
-                       "]" { "." SimpleIdentifier }
 RowExpressionExtension ::= SimpleIdentifier
                         | SimpleIdentifier "(" [ "*" | /* empty */ | FunctionParameterList ] ")"
 
@@ -263,8 +271,8 @@ PostfixRowOperator ::= "IS" [ "NOT" ]
 
 Expression3        ::= AtomicRowExpression
                      | CursorExpression
-                     | "ROW" "(" OrderedQueryOrExpr | ExpressionList ")"   /* explicit ROW */
-                     | [ "ROW" ] "(" OrderedQueryOrExpr | ExpressionList ")" [ IntervalQualifier ] /* row/paren form */
+                     | "ROW" "(" OrderedQueryOrExpr | ExpressionCommaList ")"   /* explicit ROW */
+                     | [ "ROW" ] "(" OrderedQueryOrExpr | ExpressionCommaList ")" [ IntervalQualifier ] /* row/paren form */
                      | LambdaExpression
 
 AtomicRowExpression::= LiteralOrIntervalExpression | DynamicParam | BuiltinFunctionCall | JdbcFunctionCall 
@@ -277,18 +285,24 @@ AtomicRowExpression::= LiteralOrIntervalExpression | DynamicParam | BuiltinFunct
 #### 5. 関数、コンストラクタ、特殊構文 (Special Functions & Constructors)
 
 ```ebnf
-BuiltinFunctionCall ::= ( "CAST" | "SAFE_CAST" | "TRY_CAST" ) "(" Expression "AS" ( DataType | "INTERVAL" IntervalQualifier ) [ "FORMAT" StringLiteral ] ")"
+BuiltinFunctionCall ::= ( "CAST" | "SAFE_CAST" | "TRY_CAST" )
+                        "(" Expression "AS"
+                          ( DataType | "INTERVAL" IntervalQualifier )
+                          [ "FORMAT" StringLiteral ]
+                        ")"
                       | "EXTRACT" "(" TimeUnitOrName "FROM" Expression ")"
                       | "POSITION" "(" AtomicRowExpression "IN" Expression [ "FROM" Expression ] ")"
                       | "CONVERT" "("
                           ( Expression "USING" SimpleIdentifier
                           | Expression "," SimpleIdentifier [ "," SimpleIdentifier ]
-                          | ( DataType | "INTERVAL" IntervalQualifier ) "," Expression [ "," ( UnsignedNumericLiteral | "NULL" ) ]
+                          | ( DataType | "INTERVAL" IntervalQualifier )
+                            "," Expression [ "," ( UnsignedNumericLiteral | "NULL" ) ]
                           )
                         ")"
                       | "TRANSLATE" "(" Expression ( "USING" SimpleIdentifier | { "," Expression } ) ")"
                       | "OVERLAY" "(" Expression "PLACING" Expression "FROM" Expression [ "FOR" Expression ] ")"
-                      | ( "FLOOR" | "CEIL" | "CEILING" ) "(" Expression [ "TO" TimeUnitOrName ] ")" [ OverClause ]
+                      | ( "FLOOR" | "CEIL" | "CEILING" )
+                        "(" Expression [ "TO" TimeUnitOrName ] ")"
                       | "SUBSTRING" "(" Expression ( "FROM" | "," ) Expression [ ( "FOR" | "," ) Expression ] ")"
                       | "TRIM" "("
                           ( ( "BOTH" | "TRAILING" | "LEADING" ) [ Expression ] "FROM" Expression
@@ -307,7 +321,9 @@ BuiltinFunctionCall ::= ( "CAST" | "SAFE_CAST" | "TRY_CAST" ) "(" Expression "AS
                       | GroupByWindowingCall | ...
 
 JsonApiCommonSyntax ::= Expression "," Expression
-                        [ "PASSING" Expression "AS" SimpleIdentifier { "," Expression "AS" SimpleIdentifier } ]
+                        [ "PASSING" Expression "AS" SimpleIdentifier
+                          { "," Expression "AS" SimpleIdentifier }
+                        ]
 JsonReturningClause ::= "RETURNING" DataType
 JsonExistsFunctionCall ::= "JSON_EXISTS" "(" JsonApiCommonSyntax [ JsonExistsErrorBehavior "ON" "ERROR" ] ")"
 JsonExistsErrorBehavior ::= "TRUE" | "FALSE" | "UNKNOWN" | "ERROR"
@@ -315,31 +331,28 @@ JsonExistsErrorBehavior ::= "TRUE" | "FALSE" | "UNKNOWN" | "ERROR"
 JsonValueFunctionCall  ::= "JSON_VALUE" "(" JsonApiCommonSyntax
                            [ JsonReturningClause ]
                            { JsonValueEmptyOrErrorBehavior "ON" ( "EMPTY" | "ERROR" ) } ")"
-JsonValueBehavior      ::= JsonValueEmptyOrErrorBehavior
 JsonValueEmptyOrErrorBehavior ::= "ERROR" | "NULL" | ( "DEFAULT" Expression )
 
 JsonQueryFunctionCall  ::= "JSON_QUERY" "(" JsonApiCommonSyntax
                            [ JsonReturningClause ]
                            [ JsonQueryWrapperBehavior "WRAPPER" ]
                            { JsonQueryEmptyOrErrorBehavior "ON" ( "EMPTY" | "ERROR" ) } ")"
-JsonWrapperBehavior    ::= JsonQueryWrapperBehavior
 JsonQueryWrapperBehavior ::= "WITHOUT" [ "ARRAY" ]
                            | "WITH" "CONDITIONAL" [ "ARRAY" ]
                            | "WITH" [ "UNCONDITIONAL" ] [ "ARRAY" ]
-JsonQueryBehavior      ::= JsonQueryEmptyOrErrorBehavior
 JsonQueryEmptyOrErrorBehavior ::= "ERROR" | "NULL" | "EMPTY" "ARRAY" | "EMPTY" "OBJECT"
 
 JsonObjectFunctionCall ::= "JSON_OBJECT" "(" [ JsonNameAndValue { "," JsonNameAndValue } ] [ JsonConstructorNullClause ] ")"
 JsonObjectAggFunctionCall ::= "JSON_OBJECTAGG" "(" JsonNameAndValue [ JsonConstructorNullClause ] ")"
 JsonArrayFunctionCall  ::= "JSON_ARRAY" "(" [ Expression { "," Expression } ] [ JsonConstructorNullClause ] ")"
-JsonArrayAggFunctionCall ::= "JSON_ARRAYAGG" "(" Expression [ OrderBy ] [ JsonConstructorNullClause ] ")"
-                           [ WithinGroupClause ]
-WithinGroupClause    ::= "WITHIN" "GROUP" "(" OrderBy ")"
+JsonArrayAggFunctionCall ::= "JSON_ARRAYAGG"
+                             "(" Expression [ OrderBy ] [ JsonConstructorNullClause ] ")"
+                             [ withinGroup ]
 
-CaseExpression      ::= "CASE" [ Expression ] { "WHEN" ExpressionList "THEN" Expression } [ "ELSE" Expression ] "END"
-MultisetConstructor ::= "MULTISET" ( "(" LeafQueryOrExpr ")" | "[" ExpressionList "]" )
-ArrayConstructor    ::= "ARRAY" ( "(" ")" | "(" ( OrderedQueryOrExpr | ExpressionList ) ")" | "[" [ ExpressionList ] "]" )
-MapConstructor      ::= "MAP" ( "(" ")" | "(" ( OrderedQueryOrExpr | ExpressionList ) ")" | "[" [ ExpressionList ] "]" )
+CaseExpression      ::= "CASE" [ Expression ] { "WHEN" ExpressionCommaList "THEN" Expression } [ "ELSE" Expression ] "END"
+MultisetConstructor ::= "MULTISET" ( "(" LeafQueryOrExpr ")" | "[" ExpressionCommaList "]" )
+ArrayConstructor    ::= "ARRAY" ( "(" ")" | "(" ( OrderedQueryOrExpr | ExpressionCommaList ) ")" | "[" [ ExpressionCommaList ] "]" )
+MapConstructor      ::= "MAP" ( "(" ")" | "(" ( OrderedQueryOrExpr | ExpressionCommaList ) ")" | "[" [ ExpressionCommaList ] "]" )
 
 ```
 
@@ -365,8 +378,10 @@ TimeZoneOpt        ::= "WITH" [ "LOCAL" ] "TIME" "ZONE"
                      | "WITHOUT" "TIME" "ZONE"
                      | /* empty */
 
-RowTypeName        ::= "ROW" "(" SimpleIdentifier DataType [ "NULL" | "NOT" "NULL" ]
-                       { "," SimpleIdentifier DataType [ "NULL" | "NOT" "NULL" ] } ")"
+RowTypeName        ::= "ROW" "("
+                       SimpleIdentifier DataType [ "NULL" | "NOT" "NULL" ]
+                       { "," SimpleIdentifier DataType [ "NULL" | "NOT" "NULL" ] }
+                       ")"
 MapTypeName        ::= "MAP" "<" DataType "," DataType ">"
 
 Literal            ::= NonIntervalLiteral | IntervalLiteral
@@ -378,11 +393,10 @@ IntervalLiteralOrExpression ::= "INTERVAL" [ "+" | "-" ]
                                )
 NonIntervalLiteral ::= NumericLiteral | StringLiteral | SpecialLiteral | DateTimeLiteral
 NumericLiteral     ::= [ "+" | "-" ] UnsignedNumericLiteral
-UnsignedNumericLiteral ::= UnsignedInteger | DecimalNumeric | DecimalStringLiteral | ApproxNumeric
-UnsignedInteger     ::= UNSIGNED_INTEGER_LITERAL
-DecimalNumeric      ::= DECIMAL_NUMERIC_LITERAL
-DecimalStringLiteral::= "DECIMAL" SimpleStringLiteral
-ApproxNumeric       ::= APPROX_NUMERIC_LITERAL
+UnsignedNumericLiteral ::= UNSIGNED_INTEGER_LITERAL
+                        | DECIMAL_NUMERIC_LITERAL
+                        | "DECIMAL" SimpleStringLiteral
+                        | APPROX_NUMERIC_LITERAL
 SpecialLiteral     ::= "TRUE" | "FALSE" | "UNKNOWN" | "NULL"
 DateTimeLiteral    ::= "{d" StringLiteral "}" | "{t" StringLiteral "}" | "{ts" StringLiteral "}"
                      | "DATE" SimpleStringLiteral
@@ -405,97 +419,91 @@ IntervalQualifierStart ::= ( "YEAR" | "QUARTER" | "MONTH" | "WEEK" | "DAY" | "HO
 #### 7. 補助規則 (Helper Productions)
 
 ```ebnf
-// NOTE: Some productions below are aliases (EBNF conveniences) that expand
-// inline sequences from .jj; they do not correspond to standalone JavaCC
-// productions but are semantically equivalent.
 AddSetOpQuery       ::= BinaryQueryOperator LeafQueryOrExpr
 BinaryQueryOperator ::= ( "UNION" | "INTERSECT" | "EXCEPT" ) [ "ALL" | "DISTINCT" ]
 AddSetOpQueryOrExpr ::= BinaryQueryOperator LeafQueryOrExpr
 
 Query              ::= [ WithList ] LeafQuery { AddSetOpQuery }
-WithList           ::= "WITH" [ "RECURSIVE" ] WithItem { "," WithItem }
 SqlQueryEof         ::= OrderedQueryOrExpr <EOF>
 ExprOrJoinOrOrderedQuery ::= Query OrderByLimitOpt
                            | TableRef1 { JoinTable } { AddSetOpQuery }
 
 ParenthesizedExpression ::= "(" ( OrderedQueryOrExpr | Expression ) ")"
-ParenthesizedQueryOrCommaList ::= "(" ( OrderedQueryOrExpr | ExpressionList ) ")"
-ParenthesizedQueryOrCommaListWithDefault ::= "(" [ ExpressionOrDefault { "," ExpressionOrDefault } ] ")"
-ExpressionList      ::= Expression { "," Expression }
+ParenthesizedQueryOrCommaList ::= "(" ( OrderedQueryOrExpr | ExpressionCommaList ) ")"
+ParenthesizedQueryOrCommaListWithDefault ::= "(" [ ( Expression | "DEFAULT" )
+                                                 { "," ( Expression | "DEFAULT" ) } ] ")"
 ExpressionCommaList ::= Expression { "," Expression }
-ExpressionOrDefault ::= Expression | "DEFAULT"
 
-SimpleIdentifierList ::= SimpleIdentifier { "," SimpleIdentifier }
 SimpleIdentifier    ::= Identifier
-SimpleIdentifierOrListOrEmpty ::= SimpleIdentifier | "(" SimpleIdentifierList ")" | "(" ")"
-ParenthesizedSimpleIdentifierList ::= "(" SimpleIdentifierList ")"
+SimpleIdentifierOrListOrEmpty ::= SimpleIdentifier | ParenthesizedSimpleIdentifierList | "(" ")"
+ParenthesizedSimpleIdentifierList ::= "(" SimpleIdentifier { "," SimpleIdentifier } ")"
 CompoundIdentifier  ::= Identifier { "." Identifier } [ "." "*" ]
-CompoundTableIdentifier ::= TableIdentifierSegment { "." TableIdentifierSegment }
-TableIdentifierSegment ::= Identifier
+CompoundTableIdentifier ::= Identifier { "." Identifier }
 Identifier          ::= IDENTIFIER | HYPHENATED_IDENTIFIER | QUOTED_IDENTIFIER
                       | BACK_QUOTED_IDENTIFIER | BIG_QUERY_BACK_QUOTED_IDENTIFIER
                       | BRACKET_QUOTED_IDENTIFIER
 SimpleIdentifierFromStringLiteral ::= StringLiteral
-ParenthesizedCompoundIdentifierList ::= "(" CompoundIdentifierType { "," CompoundIdentifierType } ")"
-CompoundIdentifierType ::= CompoundIdentifier [ DataType [ NotNullOpt ] ]
+ParenthesizedCompoundIdentifierList ::= "(" AddCompoundIdentifierType { "," AddCompoundIdentifierType } ")"
 NotNullOpt          ::= "NOT" "NULL" | /* empty (nullable) */
 
-Hint               ::= "/*+" HintItem { "," HintItem } "*/"
-HintItem           ::= SimpleIdentifier [ "(" [ Literal { "," Literal } ] ")" ]
-TableHints         ::= Hint
+TableHints         ::= "/*+" AddHint { "," AddHint } "*/"
 SqlSelectKeywords  ::= /* empty (dialect-specific) */
 ParenthesizedLiteralOptionCommaList ::= "(" [ Literal { "," Literal } ] ")"
-ParenthesizedKeyValueOptionCommaList ::= "(" KeyValueOption { "," KeyValueOption } ")"
-KeyValueOption     ::= ( SimpleIdentifier | StringLiteral ) "=" StringLiteral
+ParenthesizedKeyValueOptionCommaList ::= "(" ( SimpleIdentifier | StringLiteral ) "=" StringLiteral
+                                         { "," ( SimpleIdentifier | StringLiteral ) "=" StringLiteral } ")"
 
 Where              ::= "WHERE" Expression
 GroupBy            ::= "GROUP" "BY" [ "DISTINCT" | "ALL" ] GroupingElementList
 Having             ::= "HAVING" Expression
-Window             ::= "WINDOW" WindowDeclaration { "," WindowDeclaration }
+Window             ::= "WINDOW" AddWindowSpec { "," AddWindowSpec }
 Qualify            ::= "QUALIFY" Expression
 
-OverClause         ::= /* empty (table OVER not enabled in base parser) */
 TableOverOpt       ::= /* empty (extension point) */
 Over               ::= TableOverOpt
 ExtendedTableRef   ::= /* empty (parser extension point) */
 
 TableFunctionCall  ::= "TABLE" "(" [ "SPECIFIC" ] NamedRoutineCall ")"
-ImplicitTableFunctionCallArgs ::= CompoundIdentifier "(" [ Arg0 { "," Arg } ] ")"
-NamedRoutineCall   ::= CompoundIdentifier "(" [ Arg0 { "," Arg } ] ")"
-FunctionParameterList ::= "(" [ SetQuantifier ] Arg0 { "," Arg } ")"
-SetQuantifier      ::= "ALL" | "DISTINCT"
+ImplicitTableFunctionCallArgs ::= CompoundIdentifier "(" [ AddArg0 { "," AddArg } ] ")"
+NamedRoutineCall   ::= CompoundIdentifier "(" [ AddArg0 { "," AddArg } ] ")"
+FunctionParameterList ::= "(" [ AllOrDistinct ] AddArg0 { "," AddArg } ")"
 AllOrDistinct      ::= "ALL" | "DISTINCT"
 UnquantifiedFunctionParameterList ::= FunctionParameterList
 
-AddArg0            ::= Arg0
-AddArg             ::= Arg
-AddExpression      ::= Expression
-AddExpression2b    ::= Expression2b
-AddExpressions     ::= ExpressionCommaList
-AddGroupingElement ::= GroupingElement
-AddWindowSpec      ::= WindowDeclaration
-AddWithItem        ::= WithItem
-AddSelectItem      ::= SelectItem
-AddRowConstructor  ::= RowConstructor
-AddSimpleIdentifiers ::= SimpleIdentifierList
-AddIdentifierSegment ::= Identifier
-AddTableIdentifierSegment ::= TableIdentifierSegment
-AddOrderItem       ::= OrderItem
-AddMeasureColumn   ::= MeasureColumn
-AddSubsetDefinition ::= SubsetDefinition
-AddPivotAgg        ::= PivotAgg
-AddPivotValue      ::= PivotValue
-AddUnpivotValue    ::= UnpivotValue
-AddKeyValueOption  ::= KeyValueOption
-AddOptionValue     ::= NumericLiteral | StringLiteral
-AddColumnType      ::= ColumnType
-AddCompoundIdentifierType ::= CompoundIdentifierType
-AddCompoundIdentifierTypes ::= CompoundIdentifierType { "," CompoundIdentifierType }
-AddHint            ::= HintItem
-Arg0               ::= [ SimpleIdentifier ":=" ]
+AddArg0            ::= [ SimpleIdentifier ":=" ]
                        ( Default | LambdaExpression | TableParam | PartitionedQueryOrQueryOrExpr )
-Arg                ::= [ SimpleIdentifier ":=" ]
+AddArg             ::= [ SimpleIdentifier ":=" ]
                        ( Default | LambdaExpression | TableParam | Expression )
+AddExpression      ::= Expression
+AddExpression2b    ::= { PrefixRowOperator } Expression3 { "." RowExpressionExtension }
+AddExpressions     ::= ExpressionCommaList
+AddGroupingElement ::= "GROUPING" "SETS" "(" GroupingElementList ")"
+                     | "ROLLUP" "(" ExpressionCommaList ")"
+                     | "CUBE" "(" ExpressionCommaList ")"
+                     | "(" ")"
+                     | Expression
+AddWindowSpec      ::= SimpleIdentifier "AS" WindowSpecification
+AddWithItem        ::= SimpleIdentifier [ ParenthesizedSimpleIdentifierList ] "AS" ParenthesizedExpression
+AddSelectItem      ::= SelectExpression
+                       [ [ "AS" [ "MEASURE" ] ]
+                         ( SimpleIdentifier | SimpleIdentifierFromStringLiteral )
+                       ]
+AddRowConstructor  ::= RowConstructor
+AddSimpleIdentifiers ::= SimpleIdentifier { "," SimpleIdentifier }
+AddIdentifierSegment ::= Identifier
+AddTableIdentifierSegment ::= Identifier
+AddOrderItem       ::= Expression [ "AS" ( SimpleIdentifier | SimpleIdentifierFromStringLiteral ) ]
+                       [ "ASC" | "DESC" ] [ "NULLS" ( "FIRST" | "LAST" ) ]
+AddMeasureColumn   ::= Expression "AS" SimpleIdentifier
+AddSubsetDefinition ::= SimpleIdentifier "=" "(" ExpressionCommaList ")"
+AddPivotAgg        ::= NamedFunctionCall [ [ "AS" ] SimpleIdentifier ]
+AddPivotValue      ::= RowConstructor [ [ "AS" ] SimpleIdentifier ]
+AddUnpivotValue    ::= SimpleIdentifierOrList [ "AS" RowConstructor ]
+AddKeyValueOption  ::= ( SimpleIdentifier | StringLiteral ) "=" StringLiteral
+AddOptionValue     ::= NumericLiteral | StringLiteral
+AddColumnType      ::= CompoundIdentifier DataType [ NotNullOpt ]
+AddCompoundIdentifierType ::= CompoundIdentifier [ DataType [ NotNullOpt ] ]
+AddCompoundIdentifierTypes ::= AddCompoundIdentifierType { "," AddCompoundIdentifierType }
+AddHint            ::= SimpleIdentifier [ "(" [ Literal { "," Literal } ] ")" ]
 Default            ::= "DEFAULT"
 TableParam         ::= ExplicitTable
                        [ "PARTITION" "BY" SimpleIdentifierOrList ]
@@ -506,14 +514,15 @@ PartitionedQueryOrQueryOrExpr ::= OrderedQueryOrExpr
 PartitionedByAndOrderBy ::= [ "PARTITION" "BY" SimpleIdentifierOrList ]
                             [ OrderByOfSetSemanticsTable ]
 OrderByOfSetSemanticsTable ::= "ORDER" "BY"
-                               ( "(" OrderItem { "," OrderItem } ")"
-                               | OrderItem
+                               ( "(" AddOrderItem { "," AddOrderItem } ")"
+                               | AddOrderItem
                                )
 // NOTE: OrderByOfSetSemanticsTable is a restricted ORDER BY used for set-semantics tables;
 // it allows a parenthesized list or a single OrderItem, unlike the general OrderBy rule.
 NamedFunctionCall  ::= ( StringAggFunctionCall | PercentileFunctionCall | NamedCall )
                        [ nullTreatment ] [ withinDistinct ] [ withinGroup ]
-                       [ FilterClause ] [ OverWindowClause ]
+                       [ "FILTER" "(" "WHERE" Expression ")" ]
+                       [ "OVER" ( SimpleIdentifier | WindowSpecification ) ]
 NamedCall          ::= [ "SPECIFIC" ] FunctionName
                        ( "(" "*" ")" | "(" ")" | FunctionParameterList )
 FunctionName       ::= CompoundIdentifier | ReservedFunctionName
@@ -523,8 +532,6 @@ NonReservedKeyWord  ::= /* non-reserved keyword set (lexer-defined) */
 NonReservedKeyWord0of3 ::= NonReservedKeyWord
 NonReservedKeyWord1of3 ::= NonReservedKeyWord
 NonReservedKeyWord2of3 ::= NonReservedKeyWord
-FilterClause       ::= "FILTER" "(" "WHERE" Expression ")"
-OverWindowClause   ::= "OVER" ( SimpleIdentifier | WindowSpecification )
 
 StringAggFunctionCall ::= ( "ARRAY_AGG" | "ARRAY_CONCAT_AGG" | "GROUP_CONCAT" | "STRING_AGG" )
                           "(" [ AllOrDistinct ] Expression { "," Expression }
@@ -540,14 +547,13 @@ MatchRecognizeFunctionCall ::= "CLASSIFIER" "(" ")" | "MATCH_NUMBER" "(" ")"
                              | MatchRecognizeNavigationLogical
                              | MatchRecognizeNavigationPhysical
                              | MatchRecognizeCallWithModifier
-MatchRecognize      ::= MatchRecognizeClause
 MatchRecognizeCallWithModifier ::= ( "RUNNING" | "FINAL" ) NamedFunctionCall
 MatchRecognizeNavigationLogical ::= [ "RUNNING" | "FINAL" ] ( "FIRST" | "LAST" )
                                    "(" Expression [ "," NumericLiteral ] ")"
 MatchRecognizeNavigationPhysical ::= ( "PREV" | "NEXT" )
                                      "(" Expression [ "," NumericLiteral ] ")"
 
-withinDistinct     ::= "WITHIN" "DISTINCT" "(" ExpressionList ")"
+withinDistinct     ::= "WITHIN" "DISTINCT" "(" ExpressionCommaList ")"
 withinGroup        ::= "WITHIN" "GROUP" "(" OrderBy ")"
 NullTreatment      ::= ( "IGNORE" | "RESPECT" ) "NULLS"
 nullTreatment      ::= NullTreatment
@@ -560,38 +566,27 @@ ContextVariable    ::= "CURRENT_USER" | "CURRENT_DATE" | "CURRENT_TIME"
 NewSpecification   ::= "NEW" SimpleIdentifier
 SequenceExpression ::= ( "NEXT" | "CURRENT" ) "VALUE" "FOR" CompoundIdentifier
 
-SimpleIdentifierOrList ::= SimpleIdentifier | "(" SimpleIdentifierList ")"
-PivotAgg           ::= NamedFunctionCall [ [ "AS" ] SimpleIdentifier ]
-PivotValue         ::= RowConstructor [ [ "AS" ] SimpleIdentifier ]
-UnpivotValue       ::= SimpleIdentifierOrList [ "AS" RowConstructor ]
-
-MeasureColumn      ::= Expression "AS" SimpleIdentifier
+SimpleIdentifierOrList ::= SimpleIdentifier | ParenthesizedSimpleIdentifierList
 PatternExpression  ::= PatternTerm { "|" PatternTerm }
 PatternTerm        ::= PatternFactor { PatternFactor }
-PatternFactor      ::= PatternPrimary [ PatternQuantifier ]
-PatternQuantifier  ::= "*" | "+" | "?"
-                    | "{" UnsignedNumericLiteral [ "," [ UnsignedNumericLiteral ] ] "}"
-                    | "{" "," UnsignedNumericLiteral "}"
-                    | "{" "-" PatternExpression "-" "}"
-                    [ "?" ]
+PatternFactor      ::= PatternPrimary
+                       [ "*" | "+" | "?"
+                       | "{" UnsignedNumericLiteral [ "," [ UnsignedNumericLiteral ] ] "}"
+                       | "{" "," UnsignedNumericLiteral "}"
+                       | "{" "-" PatternExpression "-" "}"
+                       ] [ "?" ]
 PatternPrimary     ::= SimpleIdentifier
                     | "(" PatternExpression ")"
                     | "{" "-" PatternExpression "-" "}"
                     | "PERMUTE" "(" PatternExpression { "," PatternExpression } ")"
-SubsetDefinition   ::= SimpleIdentifier "=" "(" ExpressionList ")"
 PatternDefinition  ::= SimpleIdentifier "AS" Expression
-SkipTo             ::= "PAST" "LAST" "ROW"
-                     | "TO" "NEXT" "ROW"
-                     | "TO" "FIRST" SimpleIdentifier
-                     | "TO" [ "LAST" ] SimpleIdentifier
 
-StringLiteral      ::= BinaryStringLiteral | CharStringLiteral | CStyleEscapedString
-BinaryStringLiteral ::= BINARY_STRING_LITERAL { QUOTED_STRING }
-CharStringLiteral  ::= ( PREFIXED_STRING_LITERAL | QUOTED_STRING | UNICODE_STRING_LITERAL )
+StringLiteral      ::= BINARY_STRING_LITERAL { QUOTED_STRING }
+                    | ( PREFIXED_STRING_LITERAL | QUOTED_STRING | UNICODE_STRING_LITERAL )
                       { QUOTED_STRING } [ "UESCAPE" QUOTED_STRING ]
+                    | C_STYLE_ESCAPED_STRING_LITERAL
                     | BIG_QUERY_DOUBLE_QUOTED_STRING
                     | BIG_QUERY_QUOTED_STRING
-CStyleEscapedString ::= C_STYLE_ESCAPED_STRING_LITERAL
 SimpleStringLiteral ::= QUOTED_STRING | BIG_QUERY_QUOTED_STRING | BIG_QUERY_DOUBLE_QUOTED_STRING
 
 UnsignedIntLiteral ::= UNSIGNED_INTEGER_LITERAL
@@ -625,17 +620,6 @@ JsonName           ::= Expression
 JsonNameAndValue   ::= [ "KEY" ] JsonName ( "VALUE" | "," | ":" ) Expression
 JsonConstructorNullClause ::= "NULL" "ON" "NULL" | "ABSENT" "ON" "NULL"
 JsonOutputClause   ::= JsonReturningClause [ "FORMAT" JsonRepresentation ]
-
-TableRef1          ::= TableRef3
-TableRef2          ::= TableRef3
-TableRef3          ::= TableRefPrimary
-                       [ PivotClause ] [ UnpivotClause ]
-                       [ [ "AS" ] SimpleIdentifier [ "(" SimpleIdentifierList ")" ] ]
-                       [ TablesampleClause ]
-Tablesample        ::= TablesampleClause
-Pivot              ::= PivotClause
-Unpivot            ::= UnpivotClause
-Snapshot           ::= SnapshotClause
 
 LambdaExpression   ::= SimpleIdentifierOrListOrEmpty "->" Expression
 
@@ -695,8 +679,8 @@ CollectionsTypeName ::= DataType ( "MULTISET" | "ARRAY" )
 CollateClause       ::= "COLLATE" SimpleIdentifier
 UnusedExtension     ::= /* empty (extension point) */
 
-MeasureColumnCommaList ::= MeasureColumn { "," MeasureColumn }
-SubsetDefinitionCommaList ::= SubsetDefinition { "," SubsetDefinition }
+MeasureColumnCommaList ::= AddMeasureColumn { "," AddMeasureColumn }
+SubsetDefinitionCommaList ::= AddSubsetDefinition { "," AddSubsetDefinition }
 PatternDefinitionCommaList ::= PatternDefinition { "," PatternDefinition }
 
 Natural            ::= "NATURAL" | /* empty */
