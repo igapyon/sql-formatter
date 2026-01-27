@@ -11,7 +11,8 @@ SqlStmt            ::= SqlSetOption | SqlAlter | OrderedQueryOrExpr | SqlExplain
                      | SqlDescribe | SqlInsert | SqlDelete | SqlUpdate | SqlMerge 
                      | SqlProcedureCall
 
-SqlSetOption       ::= ( "SET" | "RESET" ) ( CompoundIdentifier | "ALL" ) [ "=" ( Literal | SimpleIdentifier | "ON" ) ]
+SqlSetOption       ::= "SET" CompoundIdentifier "=" ( Literal | SimpleIdentifier | "ON" )
+                     | "RESET" ( CompoundIdentifier | "ALL" )
 SqlAlter           ::= "ALTER" ( "SYSTEM" | "SESSION" ) SqlSetOption
 
 SqlExplain         ::= "EXPLAIN" "PLAN" [ ExplainDetailLevel ] [ ExplainDepth ] [ "AS" ( "XML" | "JSON" | "DOT" ) ] "FOR" SqlQueryOrDml
@@ -30,9 +31,15 @@ SqlProcedureCall   ::= "CALL" NamedRoutineCall
 #### 2. クエリとSELECT構文 (Query & SELECT)
 
 ```ebnf
-OrderedQueryOrExpr ::= [ WithClause ] LeafQueryOrExpr { AddSetOpQuery } [ OrderBy ] [ LimitClause ] [ OffsetClause | FetchClause ]
+OrderedQueryOrExpr ::= QueryOrExpr OrderByLimitOpt
+QueryOrExpr        ::= [ WithClause ] LeafQueryOrExpr { AddSetOpQuery }
+OrderByLimitOpt    ::= [ OrderBy ]
+                       [ LimitClause [ OffsetClause ]
+                       | OffsetClause ( [ LimitClause ] | FetchClause )
+                       | FetchClause
+                       ]
 WithClause         ::= "WITH" [ "RECURSIVE" ] WithItem { "," WithItem }
-WithItem           ::= SimpleIdentifier [ "(" SimpleIdentifierList ")" ] "AS" "(" ParenthesizedExpression ")"
+WithItem           ::= SimpleIdentifier [ "(" SimpleIdentifierList ")" ] "AS" ParenthesizedExpression
 
 SqlSelect          ::= "SELECT" [ Hint ] [ SqlSelectKeywords ] [ "STREAM" ] [ "ALL" | "DISTINCT" ]
                        SelectItem { "," SelectItem }
@@ -43,7 +50,10 @@ SqlSelect          ::= "SELECT" [ Hint ] [ SqlSelectKeywords ] [ "STREAM" ] [ "A
                        [ "WINDOW" WindowDeclaration { "," WindowDeclaration } ]
                        [ "QUALIFY" Expression ]
 
-SelectItem         ::= ( "*" | Expression ) [ [ "AS" ] [ "MEASURE" ] ( SimpleIdentifier | SimpleIdentifierFromStringLiteral ) ]
+SelectItem         ::= ( "*" | Expression )
+                       [ [ "AS" [ "MEASURE" ] ]
+                         ( SimpleIdentifier | SimpleIdentifierFromStringLiteral )
+                       ]
 GroupingElementList::= GroupingElement { "," GroupingElement }
 GroupingElement    ::= "GROUPING" "SETS" "(" GroupingElementList ")"
                      | "ROLLUP" "(" ExpressionList ")"
@@ -55,19 +65,27 @@ WindowDeclaration  ::= SimpleIdentifier "AS" WindowSpecification
 WindowSpecification::= "(" [ SimpleIdentifier ] 
                            [ "PARTITION" "BY" ExpressionList ] 
                            [ OrderBy ] 
-                           [ ( "ROWS" | "RANGE" ) ( "BETWEEN" WindowRange "AND" WindowRange | WindowRange ) [ WindowExclusion ] ] 
+                           [ ( "ROWS" | "RANGE" )
+                             ( "BETWEEN" WindowRange "AND" WindowRange | WindowRange )
+                             WindowExclusion
+                           ] 
                            [ ( "ALLOW" | "DISALLOW" ) "PARTIAL" ] 
                        ")"
 WindowRange        ::= "CURRENT" "ROW" 
                      | "UNBOUNDED" ( "PRECEDING" | "FOLLOWING" ) 
                      | Expression ( "PRECEDING" | "FOLLOWING" )
 WindowExclusion    ::= "EXCLUDE" ( "CURRENT" "ROW" | "NO" "OTHERS" | "GROUP" | "TIES" )
+                     | /* empty (default: NO OTHERS) */
 
 OrderBy            ::= "ORDER" "BY" OrderItemList
 OrderItemList      ::= OrderItem { "," OrderItem }
 OrderItem          ::= Expression [ "AS" ( SimpleIdentifier | SimpleIdentifierFromStringLiteral ) ] [ "ASC" | "DESC" ] [ "NULLS" ( "FIRST" | "LAST" ) ]
 
-LimitClause        ::= "LIMIT" ( [ UnsignedNumericLiteralOrParam "," ] ( UnsignedNumericLiteralOrParam | "ALL" ) )
+LimitClause        ::= "LIMIT" (
+                         UnsignedNumericLiteralOrParam "," ( UnsignedNumericLiteralOrParam | "ALL" )
+                       | UnsignedNumericLiteralOrParam
+                       | "ALL"
+                       )
 OffsetClause       ::= "OFFSET" UnsignedNumericLiteralOrParam [ "ROW" | "ROWS" ]
 FetchClause        ::= "FETCH" ( "FIRST" | "NEXT" ) UnsignedNumericLiteralOrParam ( "ROW" | "ROWS" ) "ONLY"
 
@@ -78,7 +96,7 @@ FetchClause        ::= "FETCH" ( "FIRST" | "NEXT" ) UnsignedNumericLiteralOrPara
 ```ebnf
 FromClause         ::= TableRef { JoinOrCommaTable }
 JoinOrCommaTable   ::= "," TableRef
-                     | [ "NATURAL" ] JoinType TableRef [ JoinCondition ]
+                     | JoinTable
                      | "CROSS" "APPLY" TableRef
                      | "OUTER" "APPLY" TableRef
 
@@ -89,18 +107,24 @@ JoinType           ::= "JOIN" | "INNER" "JOIN"
                      | "CROSS" "JOIN" 
                      | "ASOF" "JOIN"
 
+JoinTable          ::= [ "NATURAL" ] JoinType TableRef [ JoinCondition ]
 JoinCondition      ::= "ON" Expression 
                      | "USING" "(" SimpleIdentifierList ")"
                      | "MATCH_CONDITION" Expression "ON" Expression  /* ASOF JOINのみ */
 
-TableRef           ::= ( CompoundTableIdentifier [ TableHints ] [ ExtendTable ] 
-                       | [ "LATERAL" ] "(" OrderedQueryOrExpr ")" 
-                       | [ "LATERAL" ] "UNNEST" "(" ExpressionList ")" [ "WITH" "ORDINALITY" ]
-                       | [ "LATERAL" ] TableFunctionCall )
-                       [ OverClause ] [ SnapshotClause ] [ MatchRecognizeClause ]
+TableRef           ::= TableRefPrimary
                        [ PivotClause ] [ UnpivotClause ]
                        [ [ "AS" ] SimpleIdentifier [ "(" SimpleIdentifierList ")" ] ]
                        [ TablesampleClause ]
+TableRefPrimary    ::= CompoundTableIdentifier
+                         ( ImplicitTableFunctionCallArgs
+                         | [ TableHints ] [ ExtendTable ] [ OverClause ]
+                           [ SnapshotClause ] [ MatchRecognizeClause ]
+                         )
+                     | [ "LATERAL" ] "(" OrderedQueryOrExpr ")" [ OverClause ] [ MatchRecognizeClause ]
+                     | [ "LATERAL" ] "UNNEST" "(" ExpressionList ")" [ "WITH" "ORDINALITY" ]
+                     | [ "LATERAL" ] TableFunctionCall
+                     | ExtendedTableRef
 
 SnapshotClause     ::= "FOR" "SYSTEM_TIME" "AS" "OF" Expression
 ExtendTable        ::= [ "EXTEND" ] "(" ColumnType { "," ColumnType } ")"
@@ -130,16 +154,31 @@ MatchRecognizeClause ::= "MATCH_RECOGNIZE" "("
 
 ```ebnf
 Expression         ::= Expression2
-Expression2        ::= { PrefixRowOperator } Expression3 { ( BinaryRowOperator Expression3 ) | PostfixRowOperator | SpecialRowOperator }
+Expression2        ::= { PrefixRowOperator } Expression3
+                       { ( BinaryRowOperator Expression3 ) | PostfixRowOperator | SpecialRowOperator }
 
 /* 演算子詳細 */
-BinaryRowOperator  ::= "=" | ">" | "<" | "<=" | ">=" | "<>" | "!=" | "+" | "-" | "*" | "/" | "%" 
-                     | "||" | "AND" | "OR" | "IS" [ "NOT" ] "DISTINCT" "FROM" 
-                     | "MEMBER" "OF" | [ "NOT" ] "SUBMULTISET" "OF" | "CONTAINS" | "OVERLAPS"
-                     | "PRECEDES" | "SUCCEEDS" | [ "IMMEDIATELY" ] ( "PRECEDES" | "SUCCEEDS" ) | "EQUALS"
+BinaryRowOperator  ::= "=" | "<<" | ">" | "<" | "<=" | ">=" | "<>" | "!="
+                     | "+" | "-" | "*" | "/" | "%" | "||"
+                     | "AND" | "OR"
+                     | "IS" "DISTINCT" "FROM" | "IS" "NOT" "DISTINCT" "FROM"
+                     | "MEMBER" "OF"
+                     | "SUBMULTISET" "OF" | "NOT" "SUBMULTISET" "OF"
+                     | "CONTAINS" | "OVERLAPS"
+                     | "^" | "&" | "EQUALS"
+                     | "PRECEDES" | "SUCCEEDS"
+                     | "IMMEDIATELY" "PRECEDES" | "IMMEDIATELY" "SUCCEEDS"
+                     | MultisetBinaryOperator
+MultisetBinaryOperator ::= "UNION" [ "ALL" | "DISTINCT" ]
+                        | "INTERSECT" [ "ALL" | "DISTINCT" ]
+                        | "EXCEPT" [ "ALL" | "DISTINCT" ]
 
 PrefixRowOperator  ::= "+" | "-" | "NOT" | "EXISTS" | "UNIQUE"
-PostfixRowOperator ::= "IS" [ "NOT" ] ( "NULL" | "TRUE" | "FALSE" | "UNKNOWN" | "A" "SET" | "EMPTY" | "JSON" [ "VALUE" | "OBJECT" | "ARRAY" | "SCALAR" ] )
+PostfixRowOperator ::= "IS" [ "NOT" ]
+                         ( "NULL" | "TRUE" | "FALSE" | "UNKNOWN"
+                         | "A" "SET" | "EMPTY"
+                         | "JSON" [ "VALUE" | "OBJECT" | "ARRAY" | "SCALAR" ]
+                         )
                      | "FORMAT" JsonRepresentation
 
 SpecialRowOperator ::= [ "NOT" ] "IN" "(" ( OrderedQueryOrExpr | ExpressionList ) ")"
