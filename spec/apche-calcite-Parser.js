@@ -973,6 +973,11 @@ class CalciteParser {
     } else {
       base = this.ExtendedTableRef();
     }
+    // modifiers
+    let pivot = null;
+    if (this.isKeyword("PIVOT")) pivot = this.Pivot();
+    let unpivot = null;
+    if (this.isKeyword("UNPIVOT")) unpivot = this.Unpivot();
     // alias
     let alias = null;
     let columns = null;
@@ -987,11 +992,20 @@ class CalciteParser {
         columns = this.ParenthesizedSimpleIdentifierList();
       }
     }
-    return { type: "TableRef", base, alias, columns };
+    let tablesample = null;
+    if (this.isKeyword("TABLESAMPLE")) {
+      tablesample = this.Tablesample();
+    }
+    return { type: "TableRef", base, pivot, unpivot, alias, columns, tablesample };
   }
 
   Snapshot() {
-    return this.notImplemented("Snapshot");
+    this.expectKeyword("FOR");
+    this.expectKeyword("SYSTEM_TIME");
+    this.expectKeyword("AS");
+    this.expectKeyword("OF");
+    const expr = this.Expression();
+    return { type: "Snapshot", expr };
   }
 
   ExtendTable() {
@@ -1011,19 +1025,149 @@ class CalciteParser {
   }
 
   Tablesample() {
-    return this.notImplemented("Tablesample");
+    this.expectKeyword("TABLESAMPLE");
+    if (this.acceptKeyword("SUBSTITUTE")) {
+      this.expectSymbol("(");
+      const literal = this.StringLiteral();
+      this.expectSymbol(")");
+      return { type: "Tablesample", kind: "SUBSTITUTE", literal };
+    }
+    let kind;
+    if (this.acceptKeyword("BERNOULLI")) kind = "BERNOULLI";
+    else if (this.acceptKeyword("SYSTEM")) kind = "SYSTEM";
+    else return this.notImplemented("Tablesample");
+    this.expectSymbol("(");
+    const percentage = this.UnsignedNumericLiteral();
+    this.expectSymbol(")");
+    let repeatable = null;
+    if (this.acceptKeyword("REPEATABLE")) {
+      this.expectSymbol("(");
+      repeatable = this.IntLiteral();
+      this.expectSymbol(")");
+    }
+    return { type: "Tablesample", kind, percentage, repeatable };
   }
 
   Pivot() {
-    return this.notImplemented("Pivot");
+    this.expectKeyword("PIVOT");
+    this.expectSymbol("(");
+    const aggs = [this.AddPivotAgg()];
+    while (this.acceptSymbol(",")) {
+      aggs.push(this.AddPivotAgg());
+    }
+    this.expectKeyword("FOR");
+    const axis = this.SimpleIdentifierOrList();
+    this.expectKeyword("IN");
+    this.expectSymbol("(");
+    const values = [this.AddPivotValue()];
+    while (this.acceptSymbol(",")) {
+      values.push(this.AddPivotValue());
+    }
+    this.expectSymbol(")");
+    this.expectSymbol(")");
+    return { type: "Pivot", aggs, axis, values };
   }
 
   Unpivot() {
-    return this.notImplemented("Unpivot");
+    this.expectKeyword("UNPIVOT");
+    let nulls = null;
+    if (this.acceptKeyword("INCLUDE")) {
+      this.expectKeyword("NULLS");
+      nulls = "INCLUDE";
+    } else if (this.acceptKeyword("EXCLUDE")) {
+      this.expectKeyword("NULLS");
+      nulls = "EXCLUDE";
+    }
+    this.expectSymbol("(");
+    const columns = this.SimpleIdentifierOrList();
+    this.expectKeyword("FOR");
+    const axis = this.SimpleIdentifierOrList();
+    this.expectKeyword("IN");
+    this.expectSymbol("(");
+    const values = [this.AddUnpivotValue()];
+    while (this.acceptSymbol(",")) {
+      values.push(this.AddUnpivotValue());
+    }
+    this.expectSymbol(")");
+    this.expectSymbol(")");
+    return { type: "Unpivot", nulls, columns, axis, values };
   }
 
   MatchRecognize() {
-    return this.notImplemented("MatchRecognize");
+    this.expectKeyword("MATCH_RECOGNIZE");
+    this.expectSymbol("(");
+    let partitionBy = null;
+    if (this.acceptKeyword("PARTITION")) {
+      this.expectKeyword("BY");
+      partitionBy = this.ExpressionCommaList();
+    }
+    let orderBy = null;
+    if (this.isKeyword("ORDER")) orderBy = this.OrderBy();
+    let measures = null;
+    if (this.acceptKeyword("MEASURES")) {
+      measures = [this.AddMeasureColumn()];
+      while (this.acceptSymbol(",")) {
+        measures.push(this.AddMeasureColumn());
+      }
+    }
+    let rowsPerMatch = null;
+    if (this.acceptKeyword("ONE")) {
+      this.expectKeyword("ROW");
+      this.expectKeyword("PER");
+      this.expectKeyword("MATCH");
+      rowsPerMatch = "ONE ROW";
+    } else if (this.acceptKeyword("ALL")) {
+      this.expectKeyword("ROWS");
+      this.expectKeyword("PER");
+      this.expectKeyword("MATCH");
+      rowsPerMatch = "ALL ROWS";
+    }
+    let afterMatchSkip = null;
+    if (this.acceptKeyword("AFTER")) {
+      this.expectKeyword("MATCH");
+      this.expectKeyword("SKIP");
+      if (this.acceptKeyword("PAST")) {
+        this.expectKeyword("LAST");
+        this.expectKeyword("ROW");
+        afterMatchSkip = { kind: "PAST LAST ROW" };
+      } else if (this.acceptKeyword("TO")) {
+        if (this.acceptKeyword("NEXT")) {
+          this.expectKeyword("ROW");
+          afterMatchSkip = { kind: "TO NEXT ROW" };
+        } else if (this.acceptKeyword("FIRST")) {
+          const name = this.SimpleIdentifier();
+          afterMatchSkip = { kind: "TO FIRST", name };
+        } else {
+          const last = Boolean(this.acceptKeyword("LAST"));
+          const name = this.SimpleIdentifier();
+          afterMatchSkip = { kind: last ? "TO LAST" : "TO", name };
+        }
+      }
+    }
+    this.expectKeyword("PATTERN");
+    this.expectSymbol("(");
+    const anchorStart = Boolean(this.acceptSymbol("^"));
+    const pattern = this.PatternExpression();
+    const anchorEnd = Boolean(this.acceptSymbol("$"));
+    this.expectSymbol(")");
+    let within = null;
+    if (this.acceptKeyword("WITHIN")) {
+      within = this.IntervalLiteral();
+    }
+    let subsets = null;
+    if (this.acceptKeyword("SUBSET")) {
+      subsets = [this.AddSubsetDefinition()];
+      while (this.acceptSymbol(",")) {
+        subsets.push(this.AddSubsetDefinition());
+      }
+    }
+    this.expectKeyword("DEFINE");
+    const define = [this.PatternDefinition()];
+    while (this.acceptSymbol(",")) {
+      define.push(this.PatternDefinition());
+    }
+    this.expectSymbol(")");
+    return { type: "MatchRecognize", partitionBy, orderBy, measures, rowsPerMatch, afterMatchSkip, pattern, anchorStart, anchorEnd, within, subsets, define };
   }
 
   Expression() {
