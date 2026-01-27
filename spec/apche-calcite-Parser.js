@@ -436,19 +436,76 @@ class CalciteParser {
   }
 
   GroupingElementList() {
-    return this.notImplemented("GroupingElementList");
+    const items = [this.AddGroupingElement()];
+    while (this.acceptSymbol(",")) {
+      items.push(this.AddGroupingElement());
+    }
+    return { type: "GroupingElementList", items };
   }
 
   WindowSpecification() {
-    return this.notImplemented("WindowSpecification");
+    this.expectSymbol("(");
+    let name = null;
+    if (this.peek().type === "IDENT") {
+      name = this.SimpleIdentifier();
+    }
+    let partitionBy = null;
+    if (this.acceptKeyword("PARTITION")) {
+      this.expectKeyword("BY");
+      partitionBy = this.ExpressionCommaList();
+    }
+    let orderBy = null;
+    if (this.isKeyword("ORDER")) {
+      orderBy = this.OrderBy();
+    }
+    let frame = null;
+    if (this.acceptKeyword("ROWS") || this.acceptKeyword("RANGE")) {
+      const kind = String(this.tokens[this.pos - 1].value).toUpperCase();
+      if (this.acceptKeyword("BETWEEN")) {
+        const start = this.WindowRange();
+        this.expectKeyword("AND");
+        const end = this.WindowRange();
+        frame = { kind, between: true, start, end };
+      } else {
+        const start = this.WindowRange();
+        frame = { kind, between: false, start };
+      }
+      const exclusion = this.WindowExclusion();
+      frame.exclusion = exclusion;
+    }
+    let partial = null;
+    if (this.acceptKeyword("ALLOW") || this.acceptKeyword("DISALLOW")) {
+      const mode = String(this.tokens[this.pos - 1].value).toUpperCase();
+      this.expectKeyword("PARTIAL");
+      partial = mode;
+    }
+    this.expectSymbol(")");
+    return { type: "WindowSpecification", name, partitionBy, orderBy, frame, partial };
   }
 
   WindowRange() {
+    if (this.acceptKeyword("CURRENT")) {
+      this.expectKeyword("ROW");
+      return { type: "WindowRange", kind: "CURRENT ROW" };
+    }
+    if (this.acceptKeyword("UNBOUNDED")) {
+      if (this.acceptKeyword("PRECEDING")) return { type: "WindowRange", kind: "UNBOUNDED PRECEDING" };
+      if (this.acceptKeyword("FOLLOWING")) return { type: "WindowRange", kind: "UNBOUNDED FOLLOWING" };
+    }
+    const expr = this.Expression();
+    if (this.acceptKeyword("PRECEDING")) return { type: "WindowRange", kind: "PRECEDING", expr };
+    if (this.acceptKeyword("FOLLOWING")) return { type: "WindowRange", kind: "FOLLOWING", expr };
     return this.notImplemented("WindowRange");
   }
 
   WindowExclusion() {
-    return this.notImplemented("WindowExclusion");
+    if (this.acceptKeyword("EXCLUDE")) {
+      if (this.acceptKeyword("CURRENT")) { this.expectKeyword("ROW"); return { type: "WindowExclusion", value: "CURRENT ROW" }; }
+      if (this.acceptKeyword("NO")) { this.expectKeyword("OTHERS"); return { type: "WindowExclusion", value: "NO OTHERS" }; }
+      if (this.acceptKeyword("GROUP")) return { type: "WindowExclusion", value: "GROUP" };
+      if (this.acceptKeyword("TIES")) return { type: "WindowExclusion", value: "TIES" };
+    }
+    return { type: "WindowExclusion", value: "NO OTHERS" };
   }
 
   OrderBy() {
@@ -1802,23 +1859,40 @@ class CalciteParser {
   }
 
   Where() {
-    return this.notImplemented("Where");
+    this.expectKeyword("WHERE");
+    const expr = this.Expression();
+    return { type: "Where", expr };
   }
 
   GroupBy() {
-    return this.notImplemented("GroupBy");
+    this.expectKeyword("GROUP");
+    this.expectKeyword("BY");
+    let set = null;
+    if (this.acceptKeyword("DISTINCT")) set = "DISTINCT";
+    else if (this.acceptKeyword("ALL")) set = "ALL";
+    const list = this.GroupingElementList();
+    return { type: "GroupBy", set, list };
   }
 
   Having() {
-    return this.notImplemented("Having");
+    this.expectKeyword("HAVING");
+    const expr = this.Expression();
+    return { type: "Having", expr };
   }
 
   Window() {
-    return this.notImplemented("Window");
+    this.expectKeyword("WINDOW");
+    const items = [this.AddWindowSpec()];
+    while (this.acceptSymbol(",")) {
+      items.push(this.AddWindowSpec());
+    }
+    return { type: "Window", items };
   }
 
   Qualify() {
-    return this.notImplemented("Qualify");
+    this.expectKeyword("QUALIFY");
+    const expr = this.Expression();
+    return { type: "Qualify", expr };
   }
 
   TableOverOpt() {
