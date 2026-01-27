@@ -3912,7 +3912,7 @@ class CalciteParser {
   Scope() {
     if (this.acceptKeyword("SYSTEM")) return { type: "Scope", value: "SYSTEM" };
     if (this.acceptKeyword("SESSION")) return { type: "Scope", value: "SESSION" };
-    return this.notImplemented("Scope");
+    return null;
   }
 
   comp() {
@@ -3923,7 +3923,7 @@ class CalciteParser {
     if (this.acceptSymbol("=")) return "=";
     if (this.acceptSymbol("<>")) return "<>";
     if (this.acceptSymbol("!=")) return "!=";
-    return this.notImplemented("comp");
+    return null;
   }
 
   periodOperator() {
