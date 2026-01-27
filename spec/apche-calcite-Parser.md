@@ -379,10 +379,17 @@ OverClause         ::= /* empty (table OVER not enabled in base parser) */
 ExtendedTableRef   ::= /* empty (parser extension point) */
 
 TableFunctionCall  ::= "TABLE" "(" [ "SPECIFIC" ] NamedRoutineCall ")"
-ImplicitTableFunctionCallArgs ::= CompoundIdentifier "(" [ Expression { "," Expression } ] ")"
-NamedRoutineCall   ::= [ "SPECIFIC" ] CompoundIdentifier FunctionParameterList
-FunctionParameterList ::= "(" [ SetQuantifier ] [ Expression { "," Expression } ] ")"
+ImplicitTableFunctionCallArgs ::= CompoundIdentifier "(" [ Arg0 { "," Arg } ] ")"
+NamedRoutineCall   ::= CompoundIdentifier "(" [ Arg0 { "," Arg } ] ")"
+FunctionParameterList ::= "(" [ SetQuantifier ] Arg0 { "," Arg } ")"
 SetQuantifier      ::= "ALL" | "DISTINCT"
+Arg0               ::= [ SimpleIdentifier ":=" ]
+                       ( Default | LambdaExpression | TableParam | PartitionedQueryOrQueryOrExpr )
+Arg                ::= [ SimpleIdentifier ":=" ]
+                       ( Default | LambdaExpression | TableParam | Expression )
+Default            ::= "DEFAULT"
+TableParam         ::= TableRef [ "PARTITION" "BY" ExpressionList ] [ OrderBy ]
+PartitionedQueryOrQueryOrExpr ::= OrderedQueryOrExpr [ "PARTITION" "BY" ExpressionList ] [ OrderBy ]
 NamedFunctionCall  ::= CompoundIdentifier FunctionParameterList
 JdbcFunctionCall   ::= "{fn" CompoundIdentifier "(" [ Expression { "," Expression } ] ")" "}"
 
@@ -394,13 +401,24 @@ NewSpecification   ::= "NEW" SimpleIdentifier
 SequenceExpression ::= ( "NEXT" | "CURRENT" ) "VALUE" "FOR" CompoundIdentifier
 
 SimpleIdentifierOrList ::= SimpleIdentifier | "(" SimpleIdentifierList ")"
-PivotAgg           ::= Expression [ "AS" SimpleIdentifier ]
-PivotValue         ::= Expression [ "AS" SimpleIdentifier ]
-UnpivotValue       ::= Expression [ "AS" SimpleIdentifier ]
+PivotAgg           ::= NamedFunctionCall [ [ "AS" ] SimpleIdentifier ]
+PivotValue         ::= RowConstructor [ [ "AS" ] SimpleIdentifier ]
+UnpivotValue       ::= SimpleIdentifierOrList [ "AS" RowConstructor ]
 
-MeasureColumn      ::= Expression [ "AS" SimpleIdentifier ]
-PatternExpression  ::= Expression
-SubsetDefinition   ::= SimpleIdentifier "=" "(" SimpleIdentifierList ")"
+MeasureColumn      ::= Expression "AS" SimpleIdentifier
+PatternExpression  ::= PatternTerm { "|" PatternTerm }
+PatternTerm        ::= PatternFactor { PatternFactor }
+PatternFactor      ::= PatternPrimary [ PatternQuantifier ]
+PatternQuantifier  ::= "*" | "+" | "?"
+                    | "{" UnsignedNumericLiteral [ "," [ UnsignedNumericLiteral ] ] "}"
+                    | "{" "," UnsignedNumericLiteral "}"
+                    | "{" "-" PatternExpression "-" "}"
+                    [ "?" ]
+PatternPrimary     ::= SimpleIdentifier
+                    | "(" PatternExpression ")"
+                    | "{" "-" PatternExpression "-" "}"
+                    | "PERMUTE" "(" PatternExpression { "," PatternExpression } ")"
+SubsetDefinition   ::= SimpleIdentifier "=" "(" ExpressionList ")"
 PatternDefinition  ::= SimpleIdentifier "AS" Expression
 SkipTo             ::= "PAST" "LAST" "ROW"
                      | "TO" "NEXT" "ROW"
