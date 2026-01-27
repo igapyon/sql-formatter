@@ -156,6 +156,13 @@ class CalciteParser {
     if (t.type !== "SYMBOL") return false;
     return ["=", "<", ">", "<=", ">=", "<>", "!="].includes(t.value);
   }
+  isJoinTypeStart() {
+    if (this.isKeyword("JOIN") || this.isKeyword("INNER") || this.isKeyword("LEFT") || this.isKeyword("RIGHT") ||
+        this.isKeyword("FULL") || this.isKeyword("CROSS") || this.isKeyword("ASOF")) {
+      return true;
+    }
+    return false;
+  }
   expect(type) {
     const t = this.peek();
     if (t.type !== type) {
@@ -459,23 +466,86 @@ class CalciteParser {
   }
 
   FromClause() {
-    return this.notImplemented("FromClause");
+    const first = this.TableRef();
+    const joins = [];
+    while (true) {
+      const save = this.pos;
+      const j = this.JoinOrCommaTable();
+      if (!j) {
+        this.pos = save;
+        break;
+      }
+      joins.push(j);
+    }
+    return { type: "FromClause", first, joins };
   }
 
   JoinOrCommaTable() {
-    return this.notImplemented("JoinOrCommaTable");
+    if (this.acceptSymbol(",")) {
+      const table = this.TableRef();
+      return { type: "CommaJoin", table };
+    }
+    if (this.isKeyword("CROSS") && this.isKeywordAt("APPLY", 1)) {
+      this.expectKeyword("CROSS");
+      this.expectKeyword("APPLY");
+      const table = this.TableRef();
+      return { type: "ApplyJoin", kind: "CROSS", table };
+    }
+    if (this.isKeyword("OUTER") && this.isKeywordAt("APPLY", 1)) {
+      this.expectKeyword("OUTER");
+      this.expectKeyword("APPLY");
+      const table = this.TableRef();
+      return { type: "ApplyJoin", kind: "OUTER", table };
+    }
+    if (this.isKeyword("NATURAL") || this.isJoinTypeStart()) {
+      return this.JoinTable();
+    }
+    return null;
   }
 
   JoinType() {
+    if (this.acceptKeyword("JOIN")) return "JOIN";
+    if (this.acceptKeyword("INNER")) { this.expectKeyword("JOIN"); return "INNER JOIN"; }
+    if (this.acceptKeyword("LEFT")) {
+      let suffix = "";
+      if (this.acceptKeyword("OUTER")) suffix = " OUTER";
+      else if (this.acceptKeyword("ASOF")) suffix = " ASOF";
+      this.expectKeyword("JOIN");
+      return `LEFT${suffix} JOIN`;
+    }
+    if (this.acceptKeyword("RIGHT")) {
+      let suffix = "";
+      if (this.acceptKeyword("OUTER")) suffix = " OUTER";
+      this.expectKeyword("JOIN");
+      return `RIGHT${suffix} JOIN`;
+    }
+    if (this.acceptKeyword("FULL")) {
+      let suffix = "";
+      if (this.acceptKeyword("OUTER")) suffix = " OUTER";
+      this.expectKeyword("JOIN");
+      return `FULL${suffix} JOIN`;
+    }
+    if (this.acceptKeyword("CROSS")) { this.expectKeyword("JOIN"); return "CROSS JOIN"; }
+    if (this.acceptKeyword("ASOF")) { this.expectKeyword("JOIN"); return "ASOF JOIN"; }
     return this.notImplemented("JoinType");
   }
 
   JoinTable() {
-    return this.notImplemented("JoinTable");
+    let natural = false;
+    if (this.acceptKeyword("NATURAL")) natural = true;
+    const joinType = this.JoinType();
+    const table = this.TableRef();
+    let condition = null;
+    if (this.acceptKeyword("ON")) {
+      condition = { type: "On", expr: this.Expression() };
+    } else if (this.acceptKeyword("USING")) {
+      condition = { type: "Using", columns: this.ParenthesizedSimpleIdentifierList() };
+    }
+    return { type: "JoinTable", natural, joinType, table, condition };
   }
 
   TableRef() {
-    return this.notImplemented("TableRef");
+    return this.TableRef3();
   }
 
   TableRef1() {
@@ -487,7 +557,70 @@ class CalciteParser {
   }
 
   TableRef3() {
-    return this.notImplemented("TableRef3");
+    let base;
+    if (this.acceptKeyword("LATERAL")) {
+      if (this.isSymbol("(")) {
+        this.expectSymbol("(");
+        const query = this.OrderedQueryOrExpr();
+        this.expectSymbol(")");
+        base = { type: "LateralSubquery", query };
+      } else if (this.acceptKeyword("UNNEST")) {
+        this.expectSymbol("(");
+        const items = this.ExpressionCommaList();
+        this.expectSymbol(")");
+        const withOrdinality = Boolean(this.acceptKeyword("WITH") && this.acceptKeyword("ORDINALITY"));
+        base = { type: "LateralUnnest", items, withOrdinality };
+      } else {
+        base = { type: "LateralTableFunction", call: this.TableFunctionCall() };
+      }
+    } else if (this.isSymbol("(")) {
+      this.expectSymbol("(");
+      const query = this.OrderedQueryOrExpr();
+      this.expectSymbol(")");
+      base = { type: "Subquery", query };
+    } else if (this.isKeyword("UNNEST")) {
+      this.expectKeyword("UNNEST");
+      this.expectSymbol("(");
+      const items = this.ExpressionCommaList();
+      this.expectSymbol(")");
+      const withOrdinality = Boolean(this.acceptKeyword("WITH") && this.acceptKeyword("ORDINALITY"));
+      base = { type: "Unnest", items, withOrdinality };
+    } else if (this.isKeyword("TABLE")) {
+      base = { type: "TableFunctionCall", call: this.TableFunctionCall() };
+    } else if (this.peek().type === "IDENT") {
+      const name = this.CompoundTableIdentifier();
+      if (this.isSymbol("(")) {
+        const args = [];
+        this.expectSymbol("(");
+        if (!this.isSymbol(")")) {
+          args.push(this.AddArg0());
+          while (this.acceptSymbol(",")) {
+            args.push(this.AddArg());
+          }
+        }
+        this.expectSymbol(")");
+        base = { type: "ImplicitTableFunctionCall", name, args };
+      } else {
+        base = { type: "TableName", name };
+      }
+    } else {
+      base = this.ExtendedTableRef();
+    }
+    // alias
+    let alias = null;
+    let columns = null;
+    if (this.acceptKeyword("AS")) {
+      alias = this.SimpleIdentifier();
+      if (this.isSymbol("(")) {
+        columns = this.ParenthesizedSimpleIdentifierList();
+      }
+    } else if (this.peek().type === "IDENT") {
+      alias = this.SimpleIdentifier();
+      if (this.isSymbol("(")) {
+        columns = this.ParenthesizedSimpleIdentifierList();
+      }
+    }
+    return { type: "TableRef", base, alias, columns };
   }
 
   Snapshot() {
@@ -1086,7 +1219,11 @@ class CalciteParser {
   }
 
   CompoundTableIdentifier() {
-    return this.notImplemented("CompoundTableIdentifier");
+    const parts = [this.Identifier()];
+    while (this.acceptSymbol(".")) {
+      parts.push(this.Identifier());
+    }
+    return { type: "CompoundTableIdentifier", parts };
   }
 
   Identifier() {
@@ -1155,11 +1292,27 @@ class CalciteParser {
   }
 
   TableFunctionCall() {
-    return this.notImplemented("TableFunctionCall");
+    this.expectKeyword("TABLE");
+    this.expectSymbol("(");
+    let specific = false;
+    if (this.acceptKeyword("SPECIFIC")) specific = true;
+    const call = this.NamedRoutineCall();
+    this.expectSymbol(")");
+    return { type: "TableFunctionCall", specific, call };
   }
 
   ImplicitTableFunctionCallArgs() {
-    return this.notImplemented("ImplicitTableFunctionCallArgs");
+    const name = this.CompoundIdentifier();
+    this.expectSymbol("(");
+    const args = [];
+    if (!this.isSymbol(")")) {
+      args.push(this.AddArg0());
+      while (this.acceptSymbol(",")) {
+        args.push(this.AddArg());
+      }
+    }
+    this.expectSymbol(")");
+    return { type: "ImplicitTableFunctionCallArgs", name, args };
   }
 
   NamedRoutineCall() {
