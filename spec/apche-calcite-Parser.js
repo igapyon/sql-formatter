@@ -1143,55 +1143,196 @@ class CalciteParser {
   }
 
   JsonApiCommonSyntax() {
-    return this.notImplemented("JsonApiCommonSyntax");
+    const document = this.Expression();
+    this.expectSymbol(",");
+    const path = this.Expression();
+    const passing = [];
+    if (this.acceptKeyword("PASSING")) {
+      const expr = this.Expression();
+      this.expectKeyword("AS");
+      const name = this.SimpleIdentifier();
+      passing.push({ expr, name });
+      while (this.acceptSymbol(",")) {
+        const e = this.Expression();
+        this.expectKeyword("AS");
+        const n = this.SimpleIdentifier();
+        passing.push({ expr: e, name: n });
+      }
+    }
+    return { type: "JsonApiCommonSyntax", document, path, passing };
   }
 
   JsonReturningClause() {
-    return this.notImplemented("JsonReturningClause");
+    this.expectKeyword("RETURNING");
+    const dataType = this.DataType();
+    return { type: "JsonReturningClause", dataType };
   }
 
   JsonExistsFunctionCall() {
-    return this.notImplemented("JsonExistsFunctionCall");
+    this.expectKeyword("JSON_EXISTS");
+    this.expectSymbol("(");
+    const common = this.JsonApiCommonSyntax();
+    let onError = null;
+    if (this.isKeyword("TRUE") || this.isKeyword("FALSE") || this.isKeyword("UNKNOWN") || this.isKeyword("ERROR")) {
+      const behavior = this.JsonExistsErrorBehavior();
+      this.expectKeyword("ON");
+      this.expectKeyword("ERROR");
+      onError = behavior;
+    }
+    this.expectSymbol(")");
+    return { type: "JsonExistsFunctionCall", common, onError };
   }
 
   JsonExistsErrorBehavior() {
+    if (this.acceptKeyword("TRUE")) return "TRUE";
+    if (this.acceptKeyword("FALSE")) return "FALSE";
+    if (this.acceptKeyword("UNKNOWN")) return "UNKNOWN";
+    if (this.acceptKeyword("ERROR")) return "ERROR";
     return this.notImplemented("JsonExistsErrorBehavior");
   }
 
   JsonValueFunctionCall() {
-    return this.notImplemented("JsonValueFunctionCall");
+    this.expectKeyword("JSON_VALUE");
+    this.expectSymbol("(");
+    const common = this.JsonApiCommonSyntax();
+    let returning = null;
+    if (this.isKeyword("RETURNING")) {
+      returning = this.JsonReturningClause();
+    }
+    const onEmpty = [];
+    const onError = [];
+    while (true) {
+      const behavior = this.JsonValueEmptyOrErrorBehavior();
+      if (!behavior) break;
+      this.expectKeyword("ON");
+      if (this.acceptKeyword("EMPTY")) {
+        onEmpty.push(behavior);
+      } else if (this.acceptKeyword("ERROR")) {
+        onError.push(behavior);
+      } else {
+        break;
+      }
+    }
+    this.expectSymbol(")");
+    return { type: "JsonValueFunctionCall", common, returning, onEmpty, onError };
   }
 
   JsonValueEmptyOrErrorBehavior() {
-    return this.notImplemented("JsonValueEmptyOrErrorBehavior");
+    if (this.acceptKeyword("ERROR")) return { type: "JsonValueBehavior", kind: "ERROR" };
+    if (this.acceptKeyword("NULL")) return { type: "JsonValueBehavior", kind: "NULL" };
+    if (this.acceptKeyword("DEFAULT")) {
+      const expr = this.Expression();
+      return { type: "JsonValueBehavior", kind: "DEFAULT", expr };
+    }
+    return null;
   }
 
   JsonQueryFunctionCall() {
-    return this.notImplemented("JsonQueryFunctionCall");
+    this.expectKeyword("JSON_QUERY");
+    this.expectSymbol("(");
+    const common = this.JsonApiCommonSyntax();
+    let returning = null;
+    if (this.isKeyword("RETURNING")) {
+      returning = this.JsonReturningClause();
+    }
+    let wrapper = null;
+    if (this.isKeyword("WITHOUT") || this.isKeyword("WITH")) {
+      wrapper = this.JsonQueryWrapperBehavior();
+      this.expectKeyword("WRAPPER");
+    }
+    const onEmpty = [];
+    const onError = [];
+    while (true) {
+      const behavior = this.JsonQueryEmptyOrErrorBehavior();
+      if (!behavior) break;
+      this.expectKeyword("ON");
+      if (this.acceptKeyword("EMPTY")) {
+        onEmpty.push(behavior);
+      } else if (this.acceptKeyword("ERROR")) {
+        onError.push(behavior);
+      } else {
+        break;
+      }
+    }
+    this.expectSymbol(")");
+    return { type: "JsonQueryFunctionCall", common, returning, wrapper, onEmpty, onError };
   }
 
   JsonQueryWrapperBehavior() {
+    if (this.acceptKeyword("WITHOUT")) {
+      const array = Boolean(this.acceptKeyword("ARRAY"));
+      return { type: "JsonQueryWrapperBehavior", mode: "WITHOUT", array };
+    }
+    if (this.acceptKeyword("WITH")) {
+      let conditional = null;
+      if (this.acceptKeyword("CONDITIONAL")) conditional = "CONDITIONAL";
+      else if (this.acceptKeyword("UNCONDITIONAL")) conditional = "UNCONDITIONAL";
+      const array = Boolean(this.acceptKeyword("ARRAY"));
+      return { type: "JsonQueryWrapperBehavior", mode: "WITH", conditional, array };
+    }
     return this.notImplemented("JsonQueryWrapperBehavior");
   }
 
   JsonQueryEmptyOrErrorBehavior() {
-    return this.notImplemented("JsonQueryEmptyOrErrorBehavior");
+    if (this.acceptKeyword("ERROR")) return { type: "JsonQueryBehavior", kind: "ERROR" };
+    if (this.acceptKeyword("NULL")) return { type: "JsonQueryBehavior", kind: "NULL" };
+    if (this.acceptKeyword("EMPTY")) {
+      if (this.acceptKeyword("ARRAY")) return { type: "JsonQueryBehavior", kind: "EMPTY ARRAY" };
+      if (this.acceptKeyword("OBJECT")) return { type: "JsonQueryBehavior", kind: "EMPTY OBJECT" };
+    }
+    return null;
   }
 
   JsonObjectFunctionCall() {
-    return this.notImplemented("JsonObjectFunctionCall");
+    this.expectKeyword("JSON_OBJECT");
+    this.expectSymbol("(");
+    const pairs = [];
+    if (!this.isSymbol(")")) {
+      pairs.push(this.JsonNameAndValue());
+      while (this.acceptSymbol(",")) {
+        pairs.push(this.JsonNameAndValue());
+      }
+    }
+    const nullClause = this.JsonConstructorNullClause();
+    this.expectSymbol(")");
+    return { type: "JsonObjectFunctionCall", pairs, nullClause };
   }
 
   JsonObjectAggFunctionCall() {
-    return this.notImplemented("JsonObjectAggFunctionCall");
+    this.expectKeyword("JSON_OBJECTAGG");
+    this.expectSymbol("(");
+    const pair = this.JsonNameAndValue();
+    const nullClause = this.JsonConstructorNullClause();
+    this.expectSymbol(")");
+    return { type: "JsonObjectAggFunctionCall", pair, nullClause };
   }
 
   JsonArrayFunctionCall() {
-    return this.notImplemented("JsonArrayFunctionCall");
+    this.expectKeyword("JSON_ARRAY");
+    this.expectSymbol("(");
+    const items = [];
+    if (!this.isSymbol(")")) {
+      items.push(this.Expression());
+      while (this.acceptSymbol(",")) {
+        items.push(this.Expression());
+      }
+    }
+    const nullClause = this.JsonConstructorNullClause();
+    this.expectSymbol(")");
+    return { type: "JsonArrayFunctionCall", items, nullClause };
   }
 
   JsonArrayAggFunctionCall() {
-    return this.notImplemented("JsonArrayAggFunctionCall");
+    this.expectKeyword("JSON_ARRAYAGG");
+    this.expectSymbol("(");
+    const expr = this.Expression();
+    let orderBy = null;
+    if (this.isKeyword("ORDER")) orderBy = this.OrderBy();
+    const nullClause = this.JsonConstructorNullClause();
+    this.expectSymbol(")");
+    let withinGroup = null;
+    if (this.isKeyword("WITHIN")) withinGroup = this.withinGroup();
+    return { type: "JsonArrayAggFunctionCall", expr, orderBy, nullClause, withinGroup };
   }
 
   CaseExpression() {
@@ -1991,7 +2132,12 @@ class CalciteParser {
   }
 
   withinGroup() {
-    return this.notImplemented("withinGroup");
+    this.expectKeyword("WITHIN");
+    this.expectKeyword("GROUP");
+    this.expectSymbol("(");
+    const orderBy = this.OrderBy();
+    this.expectSymbol(")");
+    return { type: "withinGroup", orderBy };
   }
 
   NullTreatment() {
@@ -2216,27 +2362,53 @@ class CalciteParser {
   }
 
   JsonInputClause() {
-    return this.notImplemented("JsonInputClause");
+    this.expectKeyword("FORMAT");
+    const json = this.JsonRepresentation();
+    return { type: "JsonInputClause", json };
   }
 
   JsonPathSpec() {
-    return this.notImplemented("JsonPathSpec");
+    return this.StringLiteral();
   }
 
   JsonName() {
-    return this.notImplemented("JsonName");
+    return this.Expression();
   }
 
   JsonNameAndValue() {
-    return this.notImplemented("JsonNameAndValue");
+    let key = false;
+    if (this.acceptKeyword("KEY")) key = true;
+    const name = this.JsonName();
+    let separator;
+    if (this.acceptKeyword("VALUE")) separator = "VALUE";
+    else if (this.acceptSymbol(",")) separator = ",";
+    else if (this.acceptSymbol(":")) separator = ":";
+    else return this.notImplemented("JsonNameAndValue");
+    const value = this.Expression();
+    return { type: "JsonNameAndValue", key, name, separator, value };
   }
 
   JsonConstructorNullClause() {
-    return this.notImplemented("JsonConstructorNullClause");
+    if (this.acceptKeyword("NULL")) {
+      this.expectKeyword("ON");
+      this.expectKeyword("NULL");
+      return { type: "JsonConstructorNullClause", value: "NULL ON NULL" };
+    }
+    if (this.acceptKeyword("ABSENT")) {
+      this.expectKeyword("ON");
+      this.expectKeyword("NULL");
+      return { type: "JsonConstructorNullClause", value: "ABSENT ON NULL" };
+    }
+    return null;
   }
 
   JsonOutputClause() {
-    return this.notImplemented("JsonOutputClause");
+    const returning = this.JsonReturningClause();
+    let format = null;
+    if (this.acceptKeyword("FORMAT")) {
+      format = this.JsonRepresentation();
+    }
+    return { type: "JsonOutputClause", returning, format };
   }
 
   LambdaExpression() {
