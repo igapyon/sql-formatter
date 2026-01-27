@@ -3617,7 +3617,7 @@ class CalciteParser {
   }
 
   JsonArrayAggOrderByClause() {
-    return this.notImplemented("JsonArrayAggOrderByClause");
+    return this.OrderBy();
   }
 
   ContainsSubstrFunctionCall() {
@@ -3816,15 +3816,23 @@ class CalciteParser {
   }
 
   UnusedExtension() {
-    return this.notImplemented("UnusedExtension");
+    return { type: "UnusedExtension" };
   }
 
   MeasureColumnCommaList() {
-    return this.notImplemented("MeasureColumnCommaList");
+    const items = [this.AddMeasureColumn()];
+    while (this.acceptSymbol(",")) {
+      items.push(this.AddMeasureColumn());
+    }
+    return { type: "MeasureColumnCommaList", items };
   }
 
   SubsetDefinitionCommaList() {
-    return this.notImplemented("SubsetDefinitionCommaList");
+    const items = [this.AddSubsetDefinition()];
+    while (this.acceptSymbol(",")) {
+      items.push(this.AddSubsetDefinition());
+    }
+    return { type: "SubsetDefinitionCommaList", items };
   }
 
   PatternDefinitionCommaList() {
@@ -3836,19 +3844,29 @@ class CalciteParser {
   }
 
   Natural() {
-    return this.notImplemented("Natural");
+    if (this.acceptKeyword("NATURAL")) return { type: "Natural", value: "NATURAL" };
+    return { type: "Natural", value: "DEFAULT" };
   }
 
   Scope() {
+    if (this.acceptKeyword("SYSTEM")) return { type: "Scope", value: "SYSTEM" };
+    if (this.acceptKeyword("SESSION")) return { type: "Scope", value: "SESSION" };
     return this.notImplemented("Scope");
   }
 
   comp() {
+    if (this.acceptSymbol("<")) return "<";
+    if (this.acceptSymbol("<=")) return "<=";
+    if (this.acceptSymbol(">")) return ">";
+    if (this.acceptSymbol(">=")) return ">=";
+    if (this.acceptSymbol("=")) return "=";
+    if (this.acceptSymbol("<>")) return "<>";
+    if (this.acceptSymbol("!=")) return "!=";
     return this.notImplemented("comp");
   }
 
   periodOperator() {
-    return this.notImplemented("periodOperator");
+    return { type: "periodOperator" };
   }
 
 }
