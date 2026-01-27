@@ -750,6 +750,13 @@ class CalciteParser {
     while (this.acceptSymbol(",")) {
       selectItems.push(this.AddSelectItem());
     }
+    if (!this.isKeyword("FROM")) {
+      if (this.isKeyword("WHERE") || this.isKeyword("GROUP") || this.isKeyword("HAVING") ||
+          this.isKeyword("WINDOW") || this.isKeyword("QUALIFY")) {
+        const t = this.peek();
+        throw new Error(`Expected FROM before ${String(t.value).toUpperCase()}`);
+      }
+    }
     let from = null;
     let where = null;
     let groupBy = null;
@@ -1001,6 +1008,9 @@ class CalciteParser {
       condition = { type: "On", expr: this.Expression() };
     } else if (this.acceptKeyword("USING")) {
       condition = { type: "Using", columns: this.ParenthesizedSimpleIdentifierList() };
+    }
+    if (!natural && joinType !== "CROSS JOIN" && !condition) {
+      throw new Error("JOIN requires ON or USING");
     }
     return { type: "JoinTable", natural, joinType, table, condition };
   }
