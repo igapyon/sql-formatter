@@ -2839,11 +2839,22 @@ class CalciteParser {
   }
 
   Default() {
-    return this.notImplemented("Default");
+    this.expectKeyword("DEFAULT");
+    return { type: "Default" };
   }
 
   TableParam() {
-    return this.notImplemented("TableParam");
+    const table = this.ExplicitTable();
+    let partitionBy = null;
+    if (this.acceptKeyword("PARTITION")) {
+      this.expectKeyword("BY");
+      partitionBy = this.SimpleIdentifierOrList();
+    }
+    let orderBy = null;
+    if (this.isKeyword("ORDER")) {
+      orderBy = this.OrderByOfSetSemanticsTable();
+    }
+    return { type: "TableParam", table, partitionBy, orderBy };
   }
 
   PartitionedQueryOrQueryOrExpr() {
