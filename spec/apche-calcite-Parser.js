@@ -245,63 +245,291 @@ class CalciteParser {
   }
 
   SqlSetOption() {
+    if (this.acceptKeyword("SET")) {
+      const name = this.CompoundIdentifier();
+      this.expectSymbol("=");
+      let value;
+      if (this.acceptKeyword("ON")) {
+        value = { type: "Keyword", value: "ON" };
+      } else if (this.peek().type === "STRING" || this.peek().type === "NUMBER" || this.isKeyword("TRUE") || this.isKeyword("FALSE") || this.isKeyword("UNKNOWN") || this.isKeyword("NULL") || this.isKeyword("INTERVAL")) {
+        value = this.Literal();
+      } else {
+        value = this.SimpleIdentifier();
+      }
+      return { type: "SqlSetOption", kind: "SET", name, value };
+    }
+    if (this.acceptKeyword("RESET")) {
+      if (this.acceptKeyword("ALL")) {
+        return { type: "SqlSetOption", kind: "RESET", target: "ALL" };
+      }
+      const name = this.CompoundIdentifier();
+      return { type: "SqlSetOption", kind: "RESET", name };
+    }
     return this.notImplemented("SqlSetOption");
   }
 
   SqlAlter() {
-    return this.notImplemented("SqlAlter");
+    this.expectKeyword("ALTER");
+    let scope;
+    if (this.acceptKeyword("SYSTEM")) scope = "SYSTEM";
+    else if (this.acceptKeyword("SESSION")) scope = "SESSION";
+    else return this.notImplemented("SqlAlter");
+    const option = this.SqlSetOption();
+    return { type: "SqlAlter", scope, option };
   }
 
   SqlExplain() {
-    return this.notImplemented("SqlExplain");
+    this.expectKeyword("EXPLAIN");
+    this.expectKeyword("PLAN");
+    let detail = null;
+    if (this.isKeyword("EXCLUDING") || this.isKeyword("INCLUDING")) {
+      detail = this.ExplainDetailLevel();
+    }
+    let depth = null;
+    if (this.isKeyword("WITH") || this.isKeyword("WITHOUT")) {
+      depth = this.ExplainDepth();
+    }
+    let format = null;
+    if (this.acceptKeyword("AS")) {
+      if (this.acceptKeyword("XML")) format = "XML";
+      else if (this.acceptKeyword("JSON")) format = "JSON";
+      else if (this.acceptKeyword("DOT")) format = "DOT";
+      else return this.notImplemented("SqlExplain");
+    }
+    this.expectKeyword("FOR");
+    const stmt = this.SqlQueryOrDml();
+    return { type: "SqlExplain", detail, depth, format, stmt };
   }
 
   ExplainDetailLevel() {
-    return this.notImplemented("ExplainDetailLevel");
+    let mode;
+    if (this.acceptKeyword("EXCLUDING")) mode = "EXCLUDING";
+    else if (this.acceptKeyword("INCLUDING")) mode = "INCLUDING";
+    else return this.notImplemented("ExplainDetailLevel");
+    let all = false;
+    if (this.acceptKeyword("ALL")) all = true;
+    this.expectKeyword("ATTRIBUTES");
+    return { type: "ExplainDetailLevel", mode, all };
   }
 
   ExplainDepth() {
-    return this.notImplemented("ExplainDepth");
+    if (this.acceptKeyword("WITH")) {
+      if (this.acceptKeyword("TYPE")) return { type: "ExplainDepth", value: "WITH TYPE" };
+      if (this.acceptKeyword("IMPLEMENTATION")) return { type: "ExplainDepth", value: "WITH IMPLEMENTATION" };
+    }
+    if (this.acceptKeyword("WITHOUT")) {
+      this.expectKeyword("IMPLEMENTATION");
+      return { type: "ExplainDepth", value: "WITHOUT IMPLEMENTATION" };
+    }
+    return null;
   }
 
   SqlQueryOrDml() {
-    return this.notImplemented("SqlQueryOrDml");
+    if (this.isKeyword("INSERT") || this.isKeyword("UPSERT")) return this.SqlInsert();
+    if (this.isKeyword("DELETE")) return this.SqlDelete();
+    if (this.isKeyword("UPDATE")) return this.SqlUpdate();
+    if (this.isKeyword("MERGE")) return this.SqlMerge();
+    return this.OrderedQueryOrExpr();
   }
 
   SqlDescribe() {
-    return this.notImplemented("SqlDescribe");
+    this.expectKeyword("DESCRIBE");
+    if (this.acceptKeyword("DATABASE") || this.acceptKeyword("CATALOG") || this.acceptKeyword("SCHEMA")) {
+      const kind = String(this.tokens[this.pos - 1].value).toUpperCase();
+      const name = this.CompoundIdentifier();
+      return { type: "SqlDescribe", kind, name };
+    }
+    if (this.acceptKeyword("TABLE")) {
+      const name = this.CompoundIdentifier();
+      let extra = null;
+      if (this.peek().type === "IDENT") {
+        extra = this.SimpleIdentifier();
+      }
+      return { type: "SqlDescribe", kind: "TABLE", name, extra };
+    }
+    if (this.acceptKeyword("STATEMENT")) {
+      const stmt = this.SqlQueryOrDml();
+      return { type: "SqlDescribe", kind: "STATEMENT", stmt };
+    }
+    const name = this.CompoundIdentifier();
+    let extra = null;
+    if (this.peek().type === "IDENT") {
+      extra = this.SimpleIdentifier();
+    }
+    return { type: "SqlDescribe", kind: "DEFAULT", name, extra };
   }
 
   SqlProcedureCall() {
-    return this.notImplemented("SqlProcedureCall");
+    this.expectKeyword("CALL");
+    const call = this.NamedRoutineCall();
+    return { type: "SqlProcedureCall", call };
   }
 
   SqlInsert() {
-    return this.notImplemented("SqlInsert");
+    let mode;
+    if (this.acceptKeyword("INSERT")) mode = "INSERT";
+    else if (this.acceptKeyword("UPSERT")) mode = "UPSERT";
+    else return this.notImplemented("SqlInsert");
+    const keywords = this.SqlInsertKeywords();
+    this.expectKeyword("INTO");
+    const table = this.CompoundTableIdentifier();
+    let hints = null;
+    if (this.isSymbol("/") || this.isKeyword("/*+")) {
+      hints = this.TableHints();
+    }
+    let extend = null;
+    if (this.isKeyword("EXTEND")) {
+      extend = this.ExtendTable();
+    }
+    let columns = null;
+    if (this.isSymbol("(")) {
+      columns = this.ParenthesizedCompoundIdentifierList();
+    }
+    const source = this.OrderedQueryOrExpr();
+    return { type: "SqlInsert", mode, keywords, table, hints, extend, columns, source };
   }
 
   SqlInsertKeywords() {
-    return this.notImplemented("SqlInsertKeywords");
+    return { type: "SqlInsertKeywords" };
   }
 
   SqlDelete() {
-    return this.notImplemented("SqlDelete");
+    this.expectKeyword("DELETE");
+    this.expectKeyword("FROM");
+    const table = this.CompoundTableIdentifier();
+    let hints = null;
+    if (this.isSymbol("/") || this.isKeyword("/*+")) {
+      hints = this.TableHints();
+    }
+    let extend = null;
+    if (this.isKeyword("EXTEND")) {
+      extend = this.ExtendTable();
+    }
+    let alias = null;
+    if (this.acceptKeyword("AS")) {
+      alias = this.SimpleIdentifier();
+    } else if (this.peek().type === "IDENT") {
+      alias = this.SimpleIdentifier();
+    }
+    let where = null;
+    if (this.isKeyword("WHERE")) {
+      where = this.Where();
+    }
+    return { type: "SqlDelete", table, hints, extend, alias, where };
   }
 
   SqlUpdate() {
-    return this.notImplemented("SqlUpdate");
+    this.expectKeyword("UPDATE");
+    const table = this.CompoundTableIdentifier();
+    let hints = null;
+    if (this.isSymbol("/") || this.isKeyword("/*+")) {
+      hints = this.TableHints();
+    }
+    let extend = null;
+    if (this.isKeyword("EXTEND")) {
+      extend = this.ExtendTable();
+    }
+    let alias = null;
+    if (this.acceptKeyword("AS")) {
+      alias = this.SimpleIdentifier();
+    } else if (this.peek().type === "IDENT") {
+      alias = this.SimpleIdentifier();
+    }
+    this.expectKeyword("SET");
+    const assignments = [];
+    const first = this.CompoundIdentifier();
+    this.expectSymbol("=");
+    const firstExpr = this.Expression();
+    assignments.push({ target: first, expr: firstExpr });
+    while (this.acceptSymbol(",")) {
+      const target = this.CompoundIdentifier();
+      this.expectSymbol("=");
+      const expr = this.Expression();
+      assignments.push({ target, expr });
+    }
+    let where = null;
+    if (this.isKeyword("WHERE")) {
+      where = this.Where();
+    }
+    return { type: "SqlUpdate", table, hints, extend, alias, assignments, where };
   }
 
   SqlMerge() {
-    return this.notImplemented("SqlMerge");
+    this.expectKeyword("MERGE");
+    this.expectKeyword("INTO");
+    const table = this.CompoundTableIdentifier();
+    let hints = null;
+    if (this.isSymbol("/") || this.isKeyword("/*+")) {
+      hints = this.TableHints();
+    }
+    let extend = null;
+    if (this.isKeyword("EXTEND")) {
+      extend = this.ExtendTable();
+    }
+    let alias = null;
+    if (this.acceptKeyword("AS")) {
+      alias = this.SimpleIdentifier();
+    } else if (this.peek().type === "IDENT") {
+      alias = this.SimpleIdentifier();
+    }
+    this.expectKeyword("USING");
+    const using = this.TableRef();
+    this.expectKeyword("ON");
+    const on = this.Expression();
+    let matched = null;
+    let notMatched = null;
+    if (this.isKeyword("WHEN")) {
+      matched = this.WhenMatchedClause();
+      if (this.isKeyword("WHEN")) {
+        notMatched = this.WhenNotMatchedClause();
+      }
+    } else {
+      notMatched = this.WhenNotMatchedClause();
+    }
+    return { type: "SqlMerge", table, hints, extend, alias, using, on, matched, notMatched };
   }
 
   WhenMatchedClause() {
-    return this.notImplemented("WhenMatchedClause");
+    this.expectKeyword("WHEN");
+    this.expectKeyword("MATCHED");
+    this.expectKeyword("THEN");
+    this.expectKeyword("UPDATE");
+    this.expectKeyword("SET");
+    const assignments = [];
+    const first = this.CompoundIdentifier();
+    this.expectSymbol("=");
+    const firstExpr = this.Expression();
+    assignments.push({ target: first, expr: firstExpr });
+    while (this.acceptSymbol(",")) {
+      const target = this.CompoundIdentifier();
+      this.expectSymbol("=");
+      const expr = this.Expression();
+      assignments.push({ target, expr });
+    }
+    return { type: "WhenMatchedClause", assignments };
   }
 
   WhenNotMatchedClause() {
-    return this.notImplemented("WhenNotMatchedClause");
+    this.expectKeyword("WHEN");
+    this.expectKeyword("NOT");
+    this.expectKeyword("MATCHED");
+    this.expectKeyword("THEN");
+    this.expectKeyword("INSERT");
+    const keywords = this.SqlInsertKeywords();
+    let columns = null;
+    if (this.isSymbol("(")) {
+      columns = this.ParenthesizedSimpleIdentifierList();
+    }
+    let values;
+    if (this.acceptKeyword("VALUES")) {
+      values = this.RowConstructor();
+    } else {
+      this.expectSymbol("(");
+      this.expectKeyword("VALUES");
+      values = this.RowConstructor();
+      this.expectSymbol(")");
+    }
+    return { type: "WhenNotMatchedClause", keywords, columns, values };
   }
 
   Where() {
@@ -698,11 +926,19 @@ class CalciteParser {
   }
 
   ExtendTable() {
-    return this.notImplemented("ExtendTable");
+    this.acceptKeyword("EXTEND");
+    const list = this.ExtendList();
+    return { type: "ExtendTable", list };
   }
 
   ExtendList() {
-    return this.notImplemented("ExtendList");
+    this.expectSymbol("(");
+    const items = [this.AddColumnType()];
+    while (this.acceptSymbol(",")) {
+      items.push(this.AddColumnType());
+    }
+    this.expectSymbol(")");
+    return { type: "ExtendList", items };
   }
 
   Tablesample() {
@@ -1835,11 +2071,21 @@ class CalciteParser {
   }
 
   ParenthesizedCompoundIdentifierList() {
-    return this.notImplemented("ParenthesizedCompoundIdentifierList");
+    this.expectSymbol("(");
+    const items = [this.AddCompoundIdentifierType()];
+    while (this.acceptSymbol(",")) {
+      items.push(this.AddCompoundIdentifierType());
+    }
+    this.expectSymbol(")");
+    return { type: "ParenthesizedCompoundIdentifierList", items };
   }
 
   NotNullOpt() {
-    return this.notImplemented("NotNullOpt");
+    if (this.acceptKeyword("NOT")) {
+      this.expectKeyword("NULL");
+      return { type: "NotNullOpt", value: "NOT NULL" };
+    }
+    return null;
   }
 
   TableHints() {
@@ -2080,11 +2326,23 @@ class CalciteParser {
   }
 
   AddColumnType() {
-    return this.notImplemented("AddColumnType");
+    const name = this.CompoundIdentifier();
+    const dataType = this.DataType();
+    const notNull = this.NotNullOpt();
+    return { type: "AddColumnType", name, dataType, notNull };
   }
 
   AddCompoundIdentifierType() {
-    return this.notImplemented("AddCompoundIdentifierType");
+    const name = this.CompoundIdentifier();
+    let dataType = null;
+    let notNull = null;
+    if (this.isTypeNameStart()) {
+      dataType = this.DataType();
+      if (this.isKeyword("NOT")) {
+        notNull = this.NotNullOpt();
+      }
+    }
+    return { type: "AddCompoundIdentifierType", name, dataType, notNull };
   }
 
   AddCompoundIdentifierTypes() {
