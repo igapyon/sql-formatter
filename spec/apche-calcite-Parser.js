@@ -51,7 +51,7 @@ class CalciteLexer {
       }
       // symbols (two-char first)
       const two = s.slice(this.pos, this.pos + 2);
-      const twoOps = ["<=", ">=", "<>", "!=", "||", "::", "->"];
+      const twoOps = ["<=", ">=", "<>", "!=", "||", "::", "->", ":="];
       if (twoOps.includes(two)) {
         this.tokens.push({ type: "SYMBOL", value: two });
         this.pos += 2;
@@ -160,6 +160,19 @@ class CalciteParser {
     if (this.isKeyword("JOIN") || this.isKeyword("INNER") || this.isKeyword("LEFT") || this.isKeyword("RIGHT") ||
         this.isKeyword("FULL") || this.isKeyword("CROSS") || this.isKeyword("ASOF")) {
       return true;
+    }
+    return false;
+  }
+  isTypeNameStart() {
+    const keywords = [
+      "GEOMETRY", "BOOLEAN", "INTEGER", "INT", "UNSIGNED", "TINYINT", "SMALLINT", "BIGINT",
+      "REAL", "DOUBLE", "FLOAT", "VARIANT", "UUID",
+      "BINARY", "VARBINARY", "DECIMAL", "DEC", "NUMERIC", "ANY",
+      "CHARACTER", "CHAR", "VARCHAR", "DATE", "TIME", "TIMESTAMP",
+      "ROW", "MAP",
+    ];
+    for (const k of keywords) {
+      if (this.isKeyword(k)) return true;
     }
     return false;
   }
@@ -897,7 +910,14 @@ class CalciteParser {
     if (this.isSymbol("{") && this.isKeywordAt("FN", 1)) {
       return this.JdbcFunctionCall();
     }
-    if (this.isKeyword("CAST") || this.isKeyword("SAFE_CAST") || this.isKeyword("TRY_CAST")) {
+    if (this.isKeyword("CAST") || this.isKeyword("SAFE_CAST") || this.isKeyword("TRY_CAST") ||
+        this.isKeyword("EXTRACT") || this.isKeyword("POSITION") || this.isKeyword("CONVERT") ||
+        this.isKeyword("TRANSLATE") || this.isKeyword("OVERLAY") ||
+        this.isKeyword("FLOOR") || this.isKeyword("CEIL") || this.isKeyword("CEILING") ||
+        this.isKeyword("SUBSTRING") || this.isKeyword("TRIM") || this.isKeyword("CONTAINS_SUBSTR") ||
+        this.isKeyword("JSON_EXISTS") || this.isKeyword("JSON_VALUE") || this.isKeyword("JSON_QUERY") ||
+        this.isKeyword("JSON_OBJECT") || this.isKeyword("JSON_OBJECTAGG") ||
+        this.isKeyword("JSON_ARRAY") || this.isKeyword("JSON_ARRAYAGG")) {
       return this.BuiltinFunctionCall();
     }
     if (t.type === "IDENT" || this.isKeyword("SPECIFIC")) {
@@ -947,15 +967,179 @@ class CalciteParser {
   }
 
   BuiltinFunctionCall() {
-    const keyword = String(this.next().value).toUpperCase();
-    this.expectSymbol("(");
-    const expr = this.Expression();
-    let asType = null;
-    if (this.acceptKeyword("AS")) {
-      asType = this.CompoundIdentifier();
+    if (this.acceptKeyword("CAST") || this.acceptKeyword("SAFE_CAST") || this.acceptKeyword("TRY_CAST")) {
+      const keyword = String(this.tokens[this.pos - 1].value).toUpperCase();
+      this.expectSymbol("(");
+      const expr = this.Expression();
+      this.expectKeyword("AS");
+      let castType;
+      if (this.acceptKeyword("INTERVAL")) {
+        castType = { type: "IntervalType", qualifier: this.IntervalQualifier() };
+      } else {
+        castType = this.DataType();
+      }
+      let format = null;
+      if (this.acceptKeyword("FORMAT")) {
+        format = this.StringLiteral();
+      }
+      this.expectSymbol(")");
+      return { type: "BuiltinFunctionCall", keyword, expr, castType, format };
     }
-    this.expectSymbol(")");
-    return { type: "BuiltinFunctionCall", keyword, expr, asType };
+    if (this.acceptKeyword("EXTRACT")) {
+      this.expectSymbol("(");
+      const unit = this.TimeUnitOrName();
+      this.expectKeyword("FROM");
+      const expr = this.Expression();
+      this.expectSymbol(")");
+      return { type: "BuiltinFunctionCall", keyword: "EXTRACT", unit, expr };
+    }
+    if (this.acceptKeyword("POSITION")) {
+      this.expectSymbol("(");
+      const needle = this.AtomicRowExpression();
+      this.expectKeyword("IN");
+      const haystack = this.Expression();
+      let from = null;
+      if (this.acceptKeyword("FROM")) {
+        from = this.Expression();
+      }
+      this.expectSymbol(")");
+      return { type: "BuiltinFunctionCall", keyword: "POSITION", needle, haystack, from };
+    }
+    if (this.acceptKeyword("CONVERT")) {
+      this.expectSymbol("(");
+      let mode;
+      let value;
+      let using = null;
+      let charset = null;
+      let typeSpec = null;
+      let expr = null;
+      let extra = null;
+      if (this.isKeyword("INTERVAL") || this.isTypeNameStart()) {
+        mode = "TYPE";
+        if (this.acceptKeyword("INTERVAL")) {
+          typeSpec = { type: "IntervalType", qualifier: this.IntervalQualifier() };
+        } else {
+          typeSpec = this.DataType();
+        }
+        this.expectSymbol(",");
+        expr = this.Expression();
+        if (this.acceptSymbol(",")) {
+          if (this.acceptKeyword("NULL")) {
+            extra = { type: "NullLiteral" };
+          } else {
+            extra = this.UnsignedNumericLiteral();
+          }
+        }
+      } else {
+        value = this.Expression();
+        if (this.acceptKeyword("USING")) {
+          mode = "USING";
+          using = this.SimpleIdentifier();
+        } else if (this.acceptSymbol(",")) {
+          mode = "CHARSET";
+          charset = this.SimpleIdentifier();
+          if (this.acceptSymbol(",")) {
+            using = this.SimpleIdentifier();
+          }
+        }
+      }
+      this.expectSymbol(")");
+      return { type: "BuiltinFunctionCall", keyword: "CONVERT", mode, value, using, charset, typeSpec, expr, extra };
+    }
+    if (this.acceptKeyword("TRANSLATE")) {
+      this.expectSymbol("(");
+      const expr = this.Expression();
+      let using = null;
+      let args = [];
+      if (this.acceptKeyword("USING")) {
+        using = this.SimpleIdentifier();
+      } else {
+        while (this.acceptSymbol(",")) {
+          args.push(this.Expression());
+        }
+      }
+      this.expectSymbol(")");
+      return { type: "BuiltinFunctionCall", keyword: "TRANSLATE", expr, using, args };
+    }
+    if (this.acceptKeyword("OVERLAY")) {
+      this.expectSymbol("(");
+      const expr = this.Expression();
+      this.expectKeyword("PLACING");
+      const placing = this.Expression();
+      this.expectKeyword("FROM");
+      const from = this.Expression();
+      let forExpr = null;
+      if (this.acceptKeyword("FOR")) {
+        forExpr = this.Expression();
+      }
+      this.expectSymbol(")");
+      return { type: "BuiltinFunctionCall", keyword: "OVERLAY", expr, placing, from, forExpr };
+    }
+    if (this.acceptKeyword("FLOOR") || this.acceptKeyword("CEIL") || this.acceptKeyword("CEILING")) {
+      const keyword = String(this.tokens[this.pos - 1].value).toUpperCase();
+      this.expectSymbol("(");
+      const expr = this.Expression();
+      let to = null;
+      if (this.acceptKeyword("TO")) {
+        to = this.TimeUnitOrName();
+      }
+      this.expectSymbol(")");
+      return { type: "BuiltinFunctionCall", keyword, expr, to };
+    }
+    if (this.acceptKeyword("SUBSTRING")) {
+      this.expectSymbol("(");
+      const expr = this.Expression();
+      let from = null;
+      let forExpr = null;
+      if (this.acceptKeyword("FROM")) {
+        from = this.Expression();
+      } else if (this.acceptSymbol(",")) {
+        from = this.Expression();
+      }
+      if (this.acceptKeyword("FOR")) {
+        forExpr = this.Expression();
+      } else if (this.acceptSymbol(",")) {
+        forExpr = this.Expression();
+      }
+      this.expectSymbol(")");
+      return { type: "BuiltinFunctionCall", keyword: "SUBSTRING", expr, from, forExpr };
+    }
+    if (this.acceptKeyword("TRIM")) {
+      this.expectSymbol("(");
+      let spec = null;
+      let trimChar = null;
+      let from = null;
+      if (this.acceptKeyword("BOTH") || this.acceptKeyword("TRAILING") || this.acceptKeyword("LEADING")) {
+        spec = String(this.tokens[this.pos - 1].value).toUpperCase();
+        if (!this.isKeyword("FROM")) {
+          trimChar = this.Expression();
+        }
+        this.expectKeyword("FROM");
+        from = this.Expression();
+      } else {
+        trimChar = this.Expression();
+        if (this.acceptKeyword("FROM")) {
+          from = this.Expression();
+        }
+      }
+      this.expectSymbol(")");
+      return { type: "BuiltinFunctionCall", keyword: "TRIM", spec, trimChar, from };
+    }
+    if (this.isKeyword("CONTAINS_SUBSTR")) {
+      return this.ContainsSubstrFunctionCall();
+    }
+    if (this.isKeyword("JSON_EXISTS")) return this.JsonExistsFunctionCall();
+    if (this.isKeyword("JSON_VALUE")) return this.JsonValueFunctionCall();
+    if (this.isKeyword("JSON_QUERY")) return this.JsonQueryFunctionCall();
+    if (this.isKeyword("JSON_OBJECT")) return this.JsonObjectFunctionCall();
+    if (this.isKeyword("JSON_OBJECTAGG")) return this.JsonObjectAggFunctionCall();
+    if (this.isKeyword("JSON_ARRAY")) return this.JsonArrayFunctionCall();
+    if (this.isKeyword("JSON_ARRAYAGG")) return this.JsonArrayAggFunctionCall();
+    if (this.isKeyword("MATCH_NUMBER") || this.isKeyword("CLASSIFIER") || this.isKeyword("FIRST") || this.isKeyword("LAST") ||
+        this.isKeyword("PREV") || this.isKeyword("NEXT") || this.isKeyword("RUNNING") || this.isKeyword("FINAL")) {
+      return this.MatchRecognizeFunctionCall();
+    }
+    return this.notImplemented("BuiltinFunctionCall");
   }
 
   JsonApiCommonSyntax() {
@@ -1946,14 +2130,37 @@ class CalciteParser {
   }
 
   TimeUnitOrName() {
-    return this.notImplemented("TimeUnitOrName");
+    const unit = this.TimeUnit();
+    if (unit) return unit;
+    return this.SimpleIdentifier();
   }
 
   TimeUnit() {
-    return this.notImplemented("TimeUnit");
+    const units = [
+      "NANOSECOND", "MICROSECOND", "MILLISECOND", "SECOND",
+      "MINUTE", "HOUR", "DAY", "DAYOFWEEK", "DAYOFYEAR", "DOW", "DOY",
+      "ISODOW", "ISOYEAR", "MONTH", "QUARTER", "YEAR",
+      "EPOCH", "DECADE", "CENTURY", "MILLENNIUM",
+    ];
+    for (const u of units) {
+      if (this.acceptKeyword(u)) return { type: "TimeUnit", unit: u };
+    }
+    if (this.acceptKeyword("WEEK")) {
+      let weekday = null;
+      if (this.acceptSymbol("(")) {
+        weekday = this.weekdayName();
+        this.expectSymbol(")");
+      }
+      return { type: "TimeUnit", unit: "WEEK", weekday };
+    }
+    return null;
   }
 
   weekdayName() {
+    const days = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+    for (const d of days) {
+      if (this.acceptKeyword(d)) return { type: "weekdayName", value: d };
+    }
     return this.notImplemented("weekdayName");
   }
 
@@ -2103,7 +2310,24 @@ class CalciteParser {
   }
 
   ContainsSubstrFunctionCall() {
-    return this.notImplemented("ContainsSubstrFunctionCall");
+    this.expectKeyword("CONTAINS_SUBSTR");
+    this.expectSymbol("(");
+    const haystack = this.Expression();
+    this.expectSymbol(",");
+    const needle = this.Expression();
+    let jsonScope = null;
+    if (this.acceptSymbol(",")) {
+      this.expectKeyword("JSON_SCOPE");
+      if (this.acceptSymbol(":=")) {
+        jsonScope = this.Expression();
+      } else {
+        this.expectSymbol(":");
+        this.expectSymbol("=");
+        jsonScope = this.Expression();
+      }
+    }
+    this.expectSymbol(")");
+    return { type: "ContainsSubstrFunctionCall", haystack, needle, jsonScope };
   }
 
   DateDiffFunctionCall() {
