@@ -71,14 +71,23 @@ class CalciteParser {
     this.pos = 0;
   }
   peek() { return this.tokens[this.pos] || { type: "EOF", value: null }; }
+  peekN(n) { return this.tokens[this.pos + n] || { type: "EOF", value: null }; }
   next() { return this.tokens[this.pos++] || { type: "EOF", value: null }; }
   isEOF() { return this.peek().type === "EOF"; }
   isSymbol(value) {
     const t = this.peek();
     return t.type === "SYMBOL" && t.value === value;
   }
+  isSymbolAt(value, offset) {
+    const t = this.peekN(offset);
+    return t.type === "SYMBOL" && t.value === value;
+  }
   isKeyword(value) {
     const t = this.peek();
+    return t.type === "IDENT" && String(t.value).toUpperCase() === value;
+  }
+  isKeywordAt(value, offset) {
+    const t = this.peekN(offset);
     return t.type === "IDENT" && String(t.value).toUpperCase() === value;
   }
   acceptSymbol(value) {
@@ -119,6 +128,11 @@ class CalciteParser {
     if (t.type === "SYMBOL") return this.next().value;
     if (t.type === "IDENT") return String(this.next().value).toUpperCase();
     throw new Error(`Expected binary operator but got ${t.type}:${t.value}`);
+  }
+  isComparisonOperatorAt(offset) {
+    const t = this.peekN(offset);
+    if (t.type !== "SYMBOL") return false;
+    return ["=", "<", ">", "<=", ">=", "<>", "!="].includes(t.value);
   }
   expect(type) {
     const t = this.peek();
@@ -488,10 +502,131 @@ class CalciteParser {
 
   Expression2() {
     let left = this.AddExpression2b();
-    while (this.isBinaryOperator()) {
-      const op = this.readBinaryOperator();
-      const right = this.AddExpression2b();
-      left = { type: "BinaryExpression", operator: op, left, right };
+    while (true) {
+      // [NOT] IN
+      if ((this.isKeyword("IN")) || (this.isKeyword("NOT") && this.isKeywordAt("IN", 1))) {
+        const not = Boolean(this.acceptKeyword("NOT"));
+        this.expectKeyword("IN");
+        this.expectSymbol("(");
+        let source;
+        if (this.isKeyword("WITH") || this.isKeyword("SELECT") || this.isKeyword("VALUES") || this.isKeyword("VALUE") || this.isKeyword("TABLE")) {
+          source = this.OrderedQueryOrExpr();
+        } else {
+          source = this.ExpressionCommaList();
+        }
+        this.expectSymbol(")");
+        left = { type: "InPredicate", not, left, source };
+        continue;
+      }
+      // comp (SOME|ANY|ALL) ( ... )
+      if (this.isComparisonOperatorAt(0) && this.isKeywordAt("SOME", 1)) {
+        const op = this.next().value;
+        this.expectKeyword("SOME");
+        this.expectSymbol("(");
+        const source = this.isKeyword("WITH") || this.isKeyword("SELECT") || this.isKeyword("VALUES") || this.isKeyword("VALUE") || this.isKeyword("TABLE")
+          ? this.OrderedQueryOrExpr()
+          : this.ExpressionCommaList();
+        this.expectSymbol(")");
+        left = { type: "QuantifiedComparison", quantifier: "SOME", operator: op, left, source };
+        continue;
+      }
+      if (this.isComparisonOperatorAt(0) && this.isKeywordAt("ANY", 1)) {
+        const op = this.next().value;
+        this.expectKeyword("ANY");
+        this.expectSymbol("(");
+        const source = this.isKeyword("WITH") || this.isKeyword("SELECT") || this.isKeyword("VALUES") || this.isKeyword("VALUE") || this.isKeyword("TABLE")
+          ? this.OrderedQueryOrExpr()
+          : this.ExpressionCommaList();
+        this.expectSymbol(")");
+        left = { type: "QuantifiedComparison", quantifier: "ANY", operator: op, left, source };
+        continue;
+      }
+      if (this.isComparisonOperatorAt(0) && this.isKeywordAt("ALL", 1)) {
+        const op = this.next().value;
+        this.expectKeyword("ALL");
+        this.expectSymbol("(");
+        const source = this.isKeyword("WITH") || this.isKeyword("SELECT") || this.isKeyword("VALUES") || this.isKeyword("VALUE") || this.isKeyword("TABLE")
+          ? this.OrderedQueryOrExpr()
+          : this.ExpressionCommaList();
+        this.expectSymbol(")");
+        left = { type: "QuantifiedComparison", quantifier: "ALL", operator: op, left, source };
+        continue;
+      }
+      // [NOT] BETWEEN
+      if (this.isKeyword("BETWEEN") || (this.isKeyword("NOT") && this.isKeywordAt("BETWEEN", 1))) {
+        const not = Boolean(this.acceptKeyword("NOT"));
+        this.expectKeyword("BETWEEN");
+        let symmetric = null;
+        if (this.acceptKeyword("SYMMETRIC")) symmetric = "SYMMETRIC";
+        else if (this.acceptKeyword("ASYMMETRIC")) symmetric = "ASYMMETRIC";
+        const lower = this.AddExpression2b();
+        this.expectKeyword("AND");
+        const upper = this.AddExpression2b();
+        left = { type: "BetweenPredicate", not, symmetric, left, lower, upper };
+        continue;
+      }
+      // [NOT] LIKE/ILIKE/RLIKE/SIMILAR TO
+      if (this.isKeyword("LIKE") ||
+          this.isKeyword("ILIKE") ||
+          this.isKeyword("RLIKE") ||
+          (this.isKeyword("SIMILAR") && this.isKeywordAt("TO", 1)) ||
+          (this.isKeyword("NOT") && (this.isKeywordAt("LIKE", 1) || this.isKeywordAt("ILIKE", 1) || this.isKeywordAt("RLIKE", 1) || (this.isKeywordAt("SIMILAR", 1) && this.isKeywordAt("TO", 2))))) {
+        const not = Boolean(this.acceptKeyword("NOT"));
+        let operator;
+        if (this.acceptKeyword("LIKE")) operator = "LIKE";
+        else if (this.acceptKeyword("ILIKE")) operator = "ILIKE";
+        else if (this.acceptKeyword("RLIKE")) operator = "RLIKE";
+        else {
+          this.expectKeyword("SIMILAR");
+          this.expectKeyword("TO");
+          operator = "SIMILAR TO";
+        }
+        const pattern = this.AddExpression2b();
+        let escape = null;
+        if (this.acceptKeyword("ESCAPE")) {
+          escape = this.Expression3();
+        }
+        left = { type: "LikePredicate", not, operator, left, pattern, escape };
+        continue;
+      }
+      // Item access: [ OFFSET/ORDINAL/... ] or [ expr ] .ident*
+      if (this.isSymbol("[")) {
+        this.expectSymbol("[");
+        let kind = null;
+        let indexExpr = null;
+        if (this.acceptKeyword("OFFSET")) kind = "OFFSET";
+        else if (this.acceptKeyword("ORDINAL")) kind = "ORDINAL";
+        else if (this.acceptKeyword("SAFE_OFFSET")) kind = "SAFE_OFFSET";
+        else if (this.acceptKeyword("SAFE_ORDINAL")) kind = "SAFE_ORDINAL";
+        if (kind) {
+          this.expectSymbol("(");
+          indexExpr = this.Expression();
+          this.expectSymbol(")");
+        } else {
+          indexExpr = this.Expression();
+        }
+        this.expectSymbol("]");
+        const accessors = [];
+        while (this.acceptSymbol(".")) {
+          accessors.push(this.SimpleIdentifier());
+        }
+        left = { type: "ItemAccess", left, kind, indexExpr, accessors };
+        continue;
+      }
+      // PostfixRowOperator
+      if (this.isKeyword("IS") || this.isKeyword("FORMAT")) {
+        const postfix = this.PostfixRowOperator();
+        left = { type: "PostfixExpression", left, postfix };
+        continue;
+      }
+      // BinaryRowOperator (fallback)
+      if (this.isBinaryOperator()) {
+        const op = this.readBinaryOperator();
+        const right = this.AddExpression2b();
+        left = { type: "BinaryExpression", operator: op, left, right };
+        continue;
+      }
+      break;
     }
     return left;
   }
@@ -518,7 +653,42 @@ class CalciteParser {
   }
 
   PostfixRowOperator() {
-    return this.notImplemented("PostfixRowOperator");
+    if (this.acceptKeyword("IS")) {
+      const not = Boolean(this.acceptKeyword("NOT"));
+      if (this.acceptKeyword("NULL")) {
+        return { type: "PostfixRowOperator", operator: "IS", not, value: "NULL" };
+      }
+      if (this.acceptKeyword("TRUE")) {
+        return { type: "PostfixRowOperator", operator: "IS", not, value: "TRUE" };
+      }
+      if (this.acceptKeyword("FALSE")) {
+        return { type: "PostfixRowOperator", operator: "IS", not, value: "FALSE" };
+      }
+      if (this.acceptKeyword("UNKNOWN")) {
+        return { type: "PostfixRowOperator", operator: "IS", not, value: "UNKNOWN" };
+      }
+      if (this.acceptKeyword("A")) {
+        this.expectKeyword("SET");
+        return { type: "PostfixRowOperator", operator: "IS", not, value: "A SET" };
+      }
+      if (this.acceptKeyword("EMPTY")) {
+        return { type: "PostfixRowOperator", operator: "IS", not, value: "EMPTY" };
+      }
+      if (this.acceptKeyword("JSON")) {
+        let jsonType = null;
+        if (this.acceptKeyword("VALUE")) jsonType = "VALUE";
+        else if (this.acceptKeyword("OBJECT")) jsonType = "OBJECT";
+        else if (this.acceptKeyword("ARRAY")) jsonType = "ARRAY";
+        else if (this.acceptKeyword("SCALAR")) jsonType = "SCALAR";
+        return { type: "PostfixRowOperator", operator: "IS", not, value: "JSON", jsonType };
+      }
+      return this.notImplemented("PostfixRowOperator");
+    }
+    if (this.acceptKeyword("FORMAT")) {
+      const jsonRepresentation = this.JsonRepresentation();
+      return { type: "PostfixRowOperator", operator: "FORMAT", jsonRepresentation };
+    }
+    return null;
   }
 
   Expression3() {
@@ -1214,7 +1384,18 @@ class CalciteParser {
   }
 
   JsonRepresentation() {
-    return this.notImplemented("JsonRepresentation");
+    this.expectKeyword("JSON");
+    let encoding = null;
+    if (this.acceptKeyword("ENCODING")) {
+      if (this.acceptKeyword("UTF8")) encoding = "UTF8";
+      else if (this.acceptKeyword("UTF16")) encoding = "UTF16";
+      else if (this.acceptKeyword("UTF32")) encoding = "UTF32";
+      else {
+        const t = this.peek();
+        throw new Error(`Expected UTF8|UTF16|UTF32 but got ${t.type}:${t.value}`);
+      }
+    }
+    return { type: "JsonRepresentation", encoding };
   }
 
   JsonInputClause() {
