@@ -909,6 +909,18 @@ class CalciteParser {
     if (t.type === "STRING" || t.type === "NUMBER") {
       return this.Literal();
     }
+    if (this.isKeyword("MULTISET")) {
+      return this.MultisetConstructor();
+    }
+    if (this.isKeyword("ARRAY")) {
+      return this.ArrayConstructor();
+    }
+    if (this.isKeyword("MAP")) {
+      return this.MapConstructor();
+    }
+    if (this.isKeyword("PERIOD")) {
+      return this.PeriodConstructor();
+    }
     if (this.isSymbol("?") || (this.isSymbol(":") && this.peekN(1).type === "NUMBER")) {
       return this.DynamicParam();
     }
@@ -921,6 +933,12 @@ class CalciteParser {
     }
     if (this.isKeyword("CASE")) {
       return this.CaseExpression();
+    }
+    if (this.isKeyword("NEW")) {
+      return this.NewSpecification();
+    }
+    if (this.isKeyword("NEXT") || this.isKeyword("CURRENT")) {
+      return this.SequenceExpression();
     }
     if (t.type === "IDENT") {
       return this.CompoundIdentifier();
@@ -1014,15 +1032,58 @@ class CalciteParser {
   }
 
   MultisetConstructor() {
-    return this.notImplemented("MultisetConstructor");
+    this.expectKeyword("MULTISET");
+    if (this.acceptSymbol("(")) {
+      const value = this.LeafQueryOrExpr();
+      this.expectSymbol(")");
+      return { type: "MultisetConstructor", kind: "PAREN", value };
+    }
+    this.expectSymbol("[");
+    const items = this.ExpressionCommaList();
+    this.expectSymbol("]");
+    return { type: "MultisetConstructor", kind: "BRACKET", items };
   }
 
   ArrayConstructor() {
-    return this.notImplemented("ArrayConstructor");
+    this.expectKeyword("ARRAY");
+    if (this.acceptSymbol("(")) {
+      if (this.acceptSymbol(")")) {
+        return { type: "ArrayConstructor", kind: "EMPTY_PAREN" };
+      }
+      const value = (this.isKeyword("WITH") || this.isKeyword("SELECT") || this.isKeyword("VALUES") || this.isKeyword("VALUE") || this.isKeyword("TABLE"))
+        ? this.OrderedQueryOrExpr()
+        : this.ExpressionCommaList();
+      this.expectSymbol(")");
+      return { type: "ArrayConstructor", kind: "PAREN", value };
+    }
+    this.expectSymbol("[");
+    let items = [];
+    if (!this.isSymbol("]")) {
+      items = this.ExpressionCommaList();
+    }
+    this.expectSymbol("]");
+    return { type: "ArrayConstructor", kind: "BRACKET", items };
   }
 
   MapConstructor() {
-    return this.notImplemented("MapConstructor");
+    this.expectKeyword("MAP");
+    if (this.acceptSymbol("(")) {
+      if (this.acceptSymbol(")")) {
+        return { type: "MapConstructor", kind: "EMPTY_PAREN" };
+      }
+      const value = (this.isKeyword("WITH") || this.isKeyword("SELECT") || this.isKeyword("VALUES") || this.isKeyword("VALUE") || this.isKeyword("TABLE"))
+        ? this.OrderedQueryOrExpr()
+        : this.ExpressionCommaList();
+      this.expectSymbol(")");
+      return { type: "MapConstructor", kind: "PAREN", value };
+    }
+    this.expectSymbol("[");
+    let items = [];
+    if (!this.isSymbol("]")) {
+      items = this.ExpressionCommaList();
+    }
+    this.expectSymbol("]");
+    return { type: "MapConstructor", kind: "BRACKET", items };
   }
 
   DataType() {
@@ -1797,19 +1858,34 @@ class CalciteParser {
     if (this.acceptKeyword("CURRENT_USER")) return { type: "ContextVariable", value: "CURRENT_USER" };
     if (this.acceptKeyword("CURRENT_DATE")) return { type: "ContextVariable", value: "CURRENT_DATE" };
     if (this.acceptKeyword("CURRENT_TIME")) return { type: "ContextVariable", value: "CURRENT_TIME" };
+    if (this.acceptKeyword("CURRENT_TIMESTAMP")) return { type: "ContextVariable", value: "CURRENT_TIMESTAMP" };
+    if (this.acceptKeyword("LOCALTIME")) return { type: "ContextVariable", value: "LOCALTIME" };
+    if (this.acceptKeyword("LOCALTIMESTAMP")) return { type: "ContextVariable", value: "LOCALTIMESTAMP" };
     return this.notImplemented("ContextVariable");
   }
 
   NewSpecification() {
-    return this.notImplemented("NewSpecification");
+    this.expectKeyword("NEW");
+    const name = this.SimpleIdentifier();
+    return { type: "NewSpecification", name };
   }
 
   SequenceExpression() {
-    return this.notImplemented("SequenceExpression");
+    let kind;
+    if (this.acceptKeyword("NEXT")) kind = "NEXT";
+    else if (this.acceptKeyword("CURRENT")) kind = "CURRENT";
+    else return this.notImplemented("SequenceExpression");
+    this.expectKeyword("VALUE");
+    this.expectKeyword("FOR");
+    const name = this.CompoundIdentifier();
+    return { type: "SequenceExpression", kind, name };
   }
 
   SimpleIdentifierOrList() {
-    return this.notImplemented("SimpleIdentifierOrList");
+    if (this.peek().type === "IDENT") {
+      return this.SimpleIdentifier();
+    }
+    return this.ParenthesizedSimpleIdentifierList();
   }
 
   PatternExpression() {
@@ -1964,11 +2040,33 @@ class CalciteParser {
   }
 
   PeriodConstructor() {
-    return this.notImplemented("PeriodConstructor");
+    this.expectKeyword("PERIOD");
+    this.expectSymbol("(");
+    const start = this.Expression();
+    this.expectSymbol(",");
+    const end = this.Expression();
+    this.expectSymbol(")");
+    return { type: "PeriodConstructor", start, end };
   }
 
   ArrayLiteral() {
-    return this.notImplemented("ArrayLiteral");
+    this.expectSymbol("{");
+    let items = [];
+    if (!this.isSymbol("}")) {
+      if (this.isSymbol("{")) {
+        items.push(this.ArrayLiteral());
+        while (this.acceptSymbol(",")) {
+          items.push(this.ArrayLiteral());
+        }
+      } else {
+        items.push(this.Literal());
+        while (this.acceptSymbol(",")) {
+          items.push(this.Literal());
+        }
+      }
+    }
+    this.expectSymbol("}");
+    return { type: "ArrayLiteral", items };
   }
 
   PrecisionOpt() {
