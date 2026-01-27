@@ -4,23 +4,19 @@
 - Stage 1: lexer + 全 production skeleton 済み。
 - 入口/Select/From/Join/式/関数/型/JSON/日付系の主要骨格は実装済み。
 - md⇔js の production 名・順序は一致済み（ヘルパー除外で一致）。
-- 直近の回帰テスト（select/cte/dml/pivot/match_recognize 等）は通過。
+- 回帰テスト/異常系テストを追加済み（全 46 件通過）。
+- lexer 実用化（コメント/文字列エスケープ/指数/引用識別子）対応済み。
+- 構文厳密化（FROM 必須/HAVING 制約/JOIN 条件/フレーム条件/ORDER+FETCH など）対応済み。
 
 ## 残り作業（優先順の目安・更新）
-1. テスト強化（回帰・境界）
-   - SELECT/SETOP/ORDER/LIMIT/WINDOW/PIVOT/MATCH_RECOGNIZE の多様例
-   - 異常系（エラー期待）を追加してパーサの誤飲みを検出
-2. lexer の実用化
-   - コメント（--, /* */）, 文字列エスケープ, 数値（指数, 小数点）, 引用付き識別子
-   - 予約語と識別子の扱い（大小/引用）を整理
-3. 構文厳密化
-   - 句の出現順序/必須/排他のチェックを追加
-   - 省略可能要素の優先順位を見直し（誤って別名に吸われるなど）
-4. DDL/DML の網羅性
-   - SqlSetOption/SqlAlter/SqlExplain 等の分岐を拡充
-5. AST 仕様の整理
+1. AST 仕様の整理
    - ノード型の命名とフィールドを最終定義し、テストで固定化
-6. 厳格な突合（最終）
+2. 構文厳密化の追加候補
+   - 句の出現順序/必須/排他の追加チェック（ORDER/LIMIT/OFFSET/FETCH/QUALIFY など）
+   - 省略可能要素の優先順位を整理（誤って別名に吸われる余地の洗い出し）
+3. テスト拡張（必要なら）
+   - SETOP/ORDER/LIMIT の境界・エラー例を追加
+4. 厳格な突合（最終）
    - apache-calcite-Parser.md を正とし、apache-calcite-Parser.js の整合を最終チェック。
    - 手順（最小）:
      1) .md から production 名一覧を抽出（順序付き）
@@ -34,7 +30,7 @@
      - 差分一覧（テキスト）と、反映後の .js
 
 ## 実装方針メモ
-- lexer は最小: IDENT/NUMBER/STRING/SYMBOL/EOF のみ。予約語判定は isKeyword で大文字比較。
+- lexer は実用化済み（コメント/エスケープ/指数/引用識別子対応）。予約語判定は isKeyword で大文字比較。
 - AST 形式は自由だが、既存の軽量ノード（type + 必要最小限のフィールド）で統一。
 - 失敗時は notImplemented を残して段階的に埋める。
 
