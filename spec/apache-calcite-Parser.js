@@ -4064,7 +4064,13 @@ class CalciteParser {
 
 }
 
-module.exports = {
-  CalciteLexer,
-  CalciteParser,
-};
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    CalciteLexer,
+    CalciteParser,
+  };
+}
+if (typeof window !== "undefined") {
+  window.CalciteLexer = CalciteLexer;
+  window.CalciteParser = CalciteParser;
+}
