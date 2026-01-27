@@ -112,6 +112,28 @@ class CalciteParser {
     }
     return this.next();
   }
+  isLambdaStart() {
+    if (this.peek().type === "IDENT" && this.isSymbolAt("->", 1)) {
+      return true;
+    }
+    if (this.isSymbol("(")) {
+      let depth = 0;
+      let i = 0;
+      while (true) {
+        const t = this.peekN(i);
+        if (!t || t.type === "EOF") break;
+        if (t.type === "SYMBOL" && t.value === "(") depth++;
+        else if (t.type === "SYMBOL" && t.value === ")") {
+          depth--;
+          if (depth === 0) {
+            return this.isSymbolAt("->", i + 1);
+          }
+        }
+        i++;
+      }
+    }
+    return false;
+  }
   isBinaryOperator() {
     const t = this.peek();
     if (t.type === "SYMBOL") {
@@ -632,7 +654,20 @@ class CalciteParser {
   }
 
   RowExpressionExtension() {
-    return this.notImplemented("RowExpressionExtension");
+    const id = this.SimpleIdentifier();
+    if (this.acceptSymbol("(")) {
+      if (this.acceptSymbol("*")) {
+        this.expectSymbol(")");
+        return { type: "RowExpressionExtension", id, callType: "STAR", args: null };
+      }
+      if (this.acceptSymbol(")")) {
+        return { type: "RowExpressionExtension", id, callType: "EMPTY", args: [] };
+      }
+      this.pos--;
+      const args = this.FunctionParameterList();
+      return { type: "RowExpressionExtension", id, callType: "PARAMS", args };
+    }
+    return { type: "RowExpressionExtension", id, callType: null, args: null };
   }
 
   BinaryRowOperator() {
@@ -692,20 +727,67 @@ class CalciteParser {
   }
 
   Expression3() {
+    if (this.isKeyword("CURSOR")) {
+      return this.CursorExpression();
+    }
+    if (this.isKeyword("ROW")) {
+      this.expectKeyword("ROW");
+      this.expectSymbol("(");
+      let node;
+      if (this.isKeyword("WITH") || this.isKeyword("SELECT") || this.isKeyword("VALUES") || this.isKeyword("VALUE") || this.isKeyword("TABLE")) {
+        node = this.OrderedQueryOrExpr();
+      } else {
+        node = this.ExpressionCommaList();
+      }
+      this.expectSymbol(")");
+      return { type: "RowExpression", node, explicit: true };
+    }
     if (this.isSymbol("(")) {
-      return this.ParenthesizedExpression();
+      this.expectSymbol("(");
+      let node;
+      if (this.isKeyword("WITH") || this.isKeyword("SELECT") || this.isKeyword("VALUES") || this.isKeyword("VALUE") || this.isKeyword("TABLE")) {
+        node = this.OrderedQueryOrExpr();
+      } else {
+        node = this.ExpressionCommaList();
+      }
+      this.expectSymbol(")");
+      return { type: "ParenExpression", node };
+    }
+    if (this.isLambdaStart()) {
+      return this.LambdaExpression();
     }
     return this.AtomicRowExpression();
   }
 
   AtomicRowExpression() {
     const t = this.peek();
+    if (this.isSymbol("{") && this.isKeywordAt("FN", 1)) {
+      return this.JdbcFunctionCall();
+    }
+    if (this.isKeyword("CAST") || this.isKeyword("SAFE_CAST") || this.isKeyword("TRY_CAST")) {
+      return this.BuiltinFunctionCall();
+    }
+    if (t.type === "IDENT" || this.isKeyword("SPECIFIC")) {
+      const save = this.pos;
+      const fn = this.NamedFunctionCall();
+      if (fn) return fn;
+      this.pos = save;
+    }
     if (t.type === "STRING" || t.type === "NUMBER") {
       return this.Literal();
+    }
+    if (this.isSymbol("?") || (this.isSymbol(":") && this.peekN(1).type === "NUMBER")) {
+      return this.DynamicParam();
+    }
+    if (this.isKeyword("CURRENT_USER") || this.isKeyword("CURRENT_DATE") || this.isKeyword("CURRENT_TIME")) {
+      return this.ContextVariable();
     }
     if (this.isSymbol("*")) {
       this.next();
       return { type: "Star" };
+    }
+    if (this.isKeyword("CASE")) {
+      return this.CaseExpression();
     }
     if (t.type === "IDENT") {
       return this.CompoundIdentifier();
@@ -714,7 +796,15 @@ class CalciteParser {
   }
 
   BuiltinFunctionCall() {
-    return this.notImplemented("BuiltinFunctionCall");
+    const keyword = String(this.next().value).toUpperCase();
+    this.expectSymbol("(");
+    const expr = this.Expression();
+    let asType = null;
+    if (this.acceptKeyword("AS")) {
+      asType = this.CompoundIdentifier();
+    }
+    this.expectSymbol(")");
+    return { type: "BuiltinFunctionCall", keyword, expr, asType };
   }
 
   JsonApiCommonSyntax() {
@@ -770,7 +860,24 @@ class CalciteParser {
   }
 
   CaseExpression() {
-    return this.notImplemented("CaseExpression");
+    this.expectKeyword("CASE");
+    let base = null;
+    if (!this.isKeyword("WHEN")) {
+      base = this.Expression();
+    }
+    const whens = [];
+    while (this.acceptKeyword("WHEN")) {
+      const conditions = this.ExpressionCommaList();
+      this.expectKeyword("THEN");
+      const result = this.Expression();
+      whens.push({ conditions, result });
+    }
+    let elseExpr = null;
+    if (this.acceptKeyword("ELSE")) {
+      elseExpr = this.Expression();
+    }
+    this.expectKeyword("END");
+    return { type: "CaseExpression", base, whens, elseExpr };
   }
 
   MultisetConstructor() {
@@ -837,7 +944,7 @@ class CalciteParser {
   }
 
   LiteralOrIntervalExpression() {
-    return this.notImplemented("LiteralOrIntervalExpression");
+    return this.Literal();
   }
 
   IntervalLiteralOrExpression() {
@@ -938,11 +1045,32 @@ class CalciteParser {
   }
 
   SimpleIdentifierOrListOrEmpty() {
+    if (this.peek().type === "IDENT") {
+      return this.SimpleIdentifier();
+    }
+    if (this.isSymbol("(")) {
+      this.expectSymbol("(");
+      if (this.acceptSymbol(")")) {
+        return { type: "SimpleIdentifierList", items: [] };
+      }
+      const items = [this.SimpleIdentifier()];
+      while (this.acceptSymbol(",")) {
+        items.push(this.SimpleIdentifier());
+      }
+      this.expectSymbol(")");
+      return { type: "SimpleIdentifierList", items };
+    }
     return this.notImplemented("SimpleIdentifierOrListOrEmpty");
   }
 
   ParenthesizedSimpleIdentifierList() {
-    return this.notImplemented("ParenthesizedSimpleIdentifierList");
+    this.expectSymbol("(");
+    const items = [this.SimpleIdentifier()];
+    while (this.acceptSymbol(",")) {
+      items.push(this.SimpleIdentifier());
+    }
+    this.expectSymbol(")");
+    return { type: "ParenthesizedSimpleIdentifierList", items };
   }
 
   CompoundIdentifier() {
@@ -1035,27 +1163,63 @@ class CalciteParser {
   }
 
   NamedRoutineCall() {
-    return this.notImplemented("NamedRoutineCall");
+    const name = this.CompoundIdentifier();
+    this.expectSymbol("(");
+    const args = [];
+    if (!this.isSymbol(")")) {
+      args.push(this.AddArg0());
+      while (this.acceptSymbol(",")) {
+        args.push(this.AddArg());
+      }
+    }
+    this.expectSymbol(")");
+    return { type: "NamedRoutineCall", name, args };
   }
 
   FunctionParameterList() {
-    return this.notImplemented("FunctionParameterList");
+    this.expectSymbol("(");
+    let quantifier = null;
+    if (this.acceptKeyword("ALL")) quantifier = "ALL";
+    else if (this.acceptKeyword("DISTINCT")) quantifier = "DISTINCT";
+    const args = [];
+    if (!this.isSymbol(")")) {
+      args.push(this.AddArg0());
+      while (this.acceptSymbol(",")) {
+        args.push(this.AddArg());
+      }
+    }
+    this.expectSymbol(")");
+    return { type: "FunctionParameterList", quantifier, args };
   }
 
   AllOrDistinct() {
-    return this.notImplemented("AllOrDistinct");
+    if (this.acceptKeyword("ALL")) return "ALL";
+    if (this.acceptKeyword("DISTINCT")) return "DISTINCT";
+    return null;
   }
 
   UnquantifiedFunctionParameterList() {
-    return this.notImplemented("UnquantifiedFunctionParameterList");
+    return this.FunctionParameterList();
   }
 
   AddArg0() {
-    return this.notImplemented("AddArg0");
+    let name = null;
+    if (this.peek().type === "IDENT" && this.isSymbolAt(":=", 1)) {
+      name = this.SimpleIdentifier();
+      this.expectSymbol(":=");
+    }
+    const expr = this.Expression();
+    return { type: "Arg", name, expr };
   }
 
   AddArg() {
-    return this.notImplemented("AddArg");
+    let name = null;
+    if (this.peek().type === "IDENT" && this.isSymbolAt(":=", 1)) {
+      name = this.SimpleIdentifier();
+      this.expectSymbol(":=");
+    }
+    const expr = this.Expression();
+    return { type: "Arg", name, expr };
   }
 
   AddExpression() {
@@ -1072,8 +1236,8 @@ class CalciteParser {
     const base = this.Expression3();
     const extensions = [];
     while (this.acceptSymbol(".")) {
-      const id = this.SimpleIdentifier();
-      extensions.push(id);
+      const ext = this.RowExpressionExtension();
+      extensions.push(ext);
     }
     return { type: "Expression2b", prefixes, base, extensions };
   }
@@ -1183,15 +1347,54 @@ class CalciteParser {
   }
 
   NamedFunctionCall() {
-    return this.notImplemented("NamedFunctionCall");
+    const namedCall = this.NamedCall();
+    if (!namedCall) return null;
+    let filter = null;
+    if (this.acceptKeyword("FILTER")) {
+      this.expectSymbol("(");
+      this.expectKeyword("WHERE");
+      filter = this.Expression();
+      this.expectSymbol(")");
+    }
+    let over = null;
+    if (this.acceptKeyword("OVER")) {
+      if (this.isSymbol("(")) {
+        over = this.WindowSpecification();
+      } else {
+        over = this.SimpleIdentifier();
+      }
+    }
+    return { type: "NamedFunctionCall", namedCall, filter, over };
   }
 
   NamedCall() {
-    return this.notImplemented("NamedCall");
+    const save = this.pos;
+    let specific = false;
+    if (this.acceptKeyword("SPECIFIC")) specific = true;
+    const name = this.FunctionName();
+    if (!name || !this.isSymbol("(")) {
+      this.pos = save;
+      return null;
+    }
+    let callType = null;
+    let params = null;
+    if (this.acceptSymbol("(")) {
+      if (this.acceptSymbol("*")) {
+        this.expectSymbol(")");
+        callType = "STAR";
+      } else if (this.acceptSymbol(")")) {
+        callType = "EMPTY";
+      } else {
+        this.pos--;
+        params = this.FunctionParameterList();
+        callType = "PARAMS";
+      }
+    }
+    return { type: "NamedCall", specific, name, callType, params };
   }
 
   FunctionName() {
-    return this.notImplemented("FunctionName");
+    return this.CompoundIdentifier();
   }
 
   ReservedFunctionName() {
@@ -1263,18 +1466,45 @@ class CalciteParser {
   }
 
   JdbcFunctionCall() {
-    return this.notImplemented("JdbcFunctionCall");
+    this.expectSymbol("{");
+    this.expectKeyword("FN");
+    const name = this.CompoundIdentifier();
+    this.expectSymbol("(");
+    const args = [];
+    if (!this.isSymbol(")")) {
+      args.push(this.Expression());
+      while (this.acceptSymbol(",")) {
+        args.push(this.Expression());
+      }
+    }
+    this.expectSymbol(")");
+    this.expectSymbol("}");
+    return { type: "JdbcFunctionCall", name, args };
   }
 
   DynamicParam() {
+    if (this.acceptSymbol("?")) {
+      return { type: "DynamicParam", kind: "QMARK", index: null };
+    }
+    if (this.acceptSymbol(":")) {
+      const index = this.UnsignedIntLiteral();
+      return { type: "DynamicParam", kind: "INDEXED", index };
+    }
     return this.notImplemented("DynamicParam");
   }
 
   CursorExpression() {
-    return this.notImplemented("CursorExpression");
+    this.expectKeyword("CURSOR");
+    this.expectSymbol("(");
+    const query = this.OrderedQueryOrExpr();
+    this.expectSymbol(")");
+    return { type: "CursorExpression", query };
   }
 
   ContextVariable() {
+    if (this.acceptKeyword("CURRENT_USER")) return { type: "ContextVariable", value: "CURRENT_USER" };
+    if (this.acceptKeyword("CURRENT_DATE")) return { type: "ContextVariable", value: "CURRENT_DATE" };
+    if (this.acceptKeyword("CURRENT_TIME")) return { type: "ContextVariable", value: "CURRENT_TIME" };
     return this.notImplemented("ContextVariable");
   }
 
@@ -1324,7 +1554,12 @@ class CalciteParser {
   }
 
   UnsignedIntLiteral() {
-    return this.notImplemented("UnsignedIntLiteral");
+    const t = this.peek();
+    if (t.type !== "NUMBER" || !/^[0-9]+$/.test(String(t.value))) {
+      throw new Error(`Expected unsigned integer but got ${t.type}:${t.value}`);
+    }
+    this.next();
+    return { type: "UnsignedIntLiteral", value: t.value };
   }
 
   IntLiteral() {
@@ -1423,7 +1658,10 @@ class CalciteParser {
   }
 
   LambdaExpression() {
-    return this.notImplemented("LambdaExpression");
+    const params = this.SimpleIdentifierOrListOrEmpty();
+    this.expectSymbol("->");
+    const body = this.Expression();
+    return { type: "LambdaExpression", params, body };
   }
 
   PeriodConstructor() {
