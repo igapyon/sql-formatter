@@ -38,19 +38,24 @@
 - 失敗時は notImplemented を残して段階的に埋める。
 
 ## 未実装一覧（notImplemented が残るもの）
-SqlSetOption / SqlAlter / SqlExplain / ExplainDetailLevel / SqlInsert / Where / LeafQuery / ExplicitTable / TableConstructor / RowConstructor /
-WindowRange / LimitClause / OffsetClause / FetchClause / JoinType / TableRef1 / TableRef2 / Snapshot / Tablesample / Pivot / Unpivot / MatchRecognize /
-BinaryRowOperator / BinaryMultisetOperator / PostfixRowOperator / AtomicRowExpression / BuiltinFunctionCall / JsonExistsErrorBehavior /
-JsonQueryWrapperBehavior / Literal / NonIntervalLiteral / SpecialLiteral / IntervalQualifierStart / AddSetOpQuery / BinaryQueryOperator /
-AddSetOpQueryOrExpr / Query / SqlQueryEof / ExprOrJoinOrOrderedQuery / ParenthesizedQueryOrCommaList / ParenthesizedQueryOrCommaListWithDefault /
-SimpleIdentifierOrListOrEmpty / SimpleIdentifierFromStringLiteral / SqlSelectKeywords / ParenthesizedLiteralOptionCommaList /
-ParenthesizedKeyValueOptionCommaList / TableOverOpt / Over / ExtendedTableRef / AddExpression / AddExpressions / AddGroupingElement / AddWindowSpec /
-AddWithItem / AddSelectItem / AddRowConstructor / AddSimpleIdentifiers / AddIdentifierSegment / AddTableIdentifierSegment / AddOrderItem /
-AddMeasureColumn / AddSubsetDefinition / AddPivotAgg / AddPivotValue / AddUnpivotValue / AddKeyValueOption / AddOptionValue /
-AddCompoundIdentifierTypes / Default / TableParam / PartitionedQueryOrQueryOrExpr / PartitionedByAndOrderBy / OrderByOfSetSemanticsTable /
+SqlSetOption / SqlAlter / SqlExplain / ExplainDetailLevel / SqlInsert / Where / LeafQuery / TableConstructor /
+WindowRange / FetchClause / JoinType / Tablesample /
+BinaryRowOperator / BinaryMultisetOperator / PostfixRowOperator / AtomicRowExpression / BuiltinFunctionCall /
+JsonExistsErrorBehavior / JsonQueryWrapperBehavior /
+Literal / NonIntervalLiteral / SpecialLiteral / IntervalQualifierStart /
+BinaryQueryOperator /
+SimpleIdentifierOrListOrEmpty /
+SqlSelectKeywords / ParenthesizedLiteralOptionCommaList / ParenthesizedKeyValueOptionCommaList /
+TableOverOpt / Over / ExtendedTableRef /
+AddExpression / AddCompoundIdentifierTypes / Default / TableParam /
 ReservedFunctionName / NonReservedJdbcFunctionName / NonReservedKeyWord / NonReservedKeyWord0of3 / NonReservedKeyWord1of3 / NonReservedKeyWord2of3 /
-StringAggFunctionCall / PercentileFunctionCall / GroupByWindowingCall / MatchRecognizeFunctionCall / MatchRecognizeCallWithModifier /
-MatchRecognizeNavigationLogical / MatchRecognizeNavigationPhysical / NullTreatment / DynamicParam / ContextVariable / SequenceExpression /
-PatternPrimary / weekdayName / Year / Quarter / Month / Week / Day / Hour / Minute / Second / IntervalWithoutQualifier / JsonNameAndValue /
-JsonArrayAggOrderByClause / FloorCeilOptions / StandardFloorCeilOptions / JdbcOdbcDataTypeName / JdbcOdbcDataType / CollectionsTypeName /
-CollateClause / UnusedExtension / MeasureColumnCommaList / SubsetDefinitionCommaList / Natural / Scope / comp / periodOperator
+StringAggFunctionCall / PercentileFunctionCall / GroupByWindowingCall /
+MatchRecognizeFunctionCall / MatchRecognizeCallWithModifier / MatchRecognizeNavigationLogical / MatchRecognizeNavigationPhysical /
+NullTreatment /
+DynamicParam / ContextVariable / SequenceExpression /
+PatternPrimary / weekdayName / Year / Quarter / Month / Week / Day / Hour / Minute / Second / IntervalWithoutQualifier /
+JsonNameAndValue / JsonArrayAggOrderByClause /
+FloorCeilOptions / StandardFloorCeilOptions /
+JdbcOdbcDataTypeName / JdbcOdbcDataType / CollectionsTypeName /
+CollateClause / UnusedExtension / MeasureColumnCommaList / SubsetDefinitionCommaList /
+Natural / Scope / comp / periodOperator
