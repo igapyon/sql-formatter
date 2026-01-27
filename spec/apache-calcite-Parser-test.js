@@ -27,6 +27,30 @@ const cases = [
   { name: 'window-allow-partial', sql: 'SELECT a FROM t WINDOW w AS (ORDER BY b ALLOW PARTIAL)', fn: 'SqlStmtList' },
 ];
 
+if (require.main === module) {
+  const samples = [
+    "SELECT 1",
+    "SELECT /*+ index(t) */ a AS x FROM t WHERE a IS NOT DISTINCT FROM b",
+    "WITH t AS (SELECT 1) SELECT * FROM t",
+    "EXPLAIN PLAN FOR SELECT 1",
+    "INSERT INTO t(a) VALUES (1)",
+    "UPDATE t SET a = 1 WHERE b = 2",
+    "DELETE FROM t WHERE a IN (1,2,3)",
+    "MERGE INTO t USING u ON t.id = u.id WHEN MATCHED THEN UPDATE SET a = 1",
+    "SELECT ARRAY_AGG(x) FROM t",
+    "SELECT JSON_VALUE(doc, '$.a' RETURNING VARCHAR) FROM t",
+    "SELECT DATE_DIFF(d1, d2, DAY) FROM t",
+  ];
+  for (const src of samples) {
+    try {
+      runCase({ name: 'sample', sql: src, fn: 'SqlStmtList' });
+      console.log(`OK: ${src}`);
+    } catch (e) {
+      console.error(`NG: ${src} -> ${e.message}`);
+    }
+  }
+}
+
 function runCase({ name, sql, fn }) {
   const lexer = new CalciteLexer(sql);
   const tokens = lexer.tokenize();
