@@ -3268,7 +3268,7 @@ class CalciteParser {
       const index = this.UnsignedIntLiteral();
       return { type: "DynamicParam", kind: "INDEXED", index };
     }
-    return this.notImplemented("DynamicParam");
+    return null;
   }
 
   CursorExpression() {
@@ -3286,7 +3286,7 @@ class CalciteParser {
     if (this.acceptKeyword("CURRENT_TIMESTAMP")) return { type: "ContextVariable", value: "CURRENT_TIMESTAMP" };
     if (this.acceptKeyword("LOCALTIME")) return { type: "ContextVariable", value: "LOCALTIME" };
     if (this.acceptKeyword("LOCALTIMESTAMP")) return { type: "ContextVariable", value: "LOCALTIMESTAMP" };
-    return this.notImplemented("ContextVariable");
+    return null;
   }
 
   NewSpecification() {
@@ -3299,7 +3299,7 @@ class CalciteParser {
     let kind;
     if (this.acceptKeyword("NEXT")) kind = "NEXT";
     else if (this.acceptKeyword("CURRENT")) kind = "CURRENT";
-    else return this.notImplemented("SequenceExpression");
+    else return null;
     this.expectKeyword("VALUE");
     this.expectKeyword("FOR");
     const name = this.CompoundIdentifier();
