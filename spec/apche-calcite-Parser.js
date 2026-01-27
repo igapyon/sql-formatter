@@ -1178,9 +1178,13 @@ class CalciteParser {
         const save = this.pos;
         try {
           const opNode = this.BinaryRowOperator();
-          const right = this.AddExpression2b();
-          left = { type: "BinaryExpression", operator: opNode, left, right };
-          continue;
+          if (!opNode) {
+            this.pos = save;
+          } else {
+            const right = this.AddExpression2b();
+            left = { type: "BinaryExpression", operator: opNode, left, right };
+            continue;
+          }
         } catch {
           this.pos = save;
         }
@@ -2127,7 +2131,17 @@ class CalciteParser {
     const t = this.peek();
     if (t.type === "STRING") return this.StringLiteral();
     if (t.type === "NUMBER") return this.NumericLiteral();
-    return this.notImplemented("Literal");
+    if (this.isKeyword("TRUE") || this.isKeyword("FALSE") || this.isKeyword("UNKNOWN") || this.isKeyword("NULL")) {
+      return this.SpecialLiteral();
+    }
+    if (this.isKeyword("INTERVAL")) {
+      return this.IntervalLiteral();
+    }
+    if (this.isKeyword("DATE") || this.isKeyword("DATETIME") || this.isKeyword("TIME") ||
+        this.isKeyword("UUID") || this.isKeyword("TIMESTAMP") || this.isSymbol("{")) {
+      return this.DateTimeLiteral();
+    }
+    throw new Error("Invalid Literal");
   }
 
   LiteralOrIntervalExpression() {
@@ -2170,7 +2184,7 @@ class CalciteParser {
         this.isKeyword("TIME") || this.isKeyword("UUID") || this.isKeyword("TIMESTAMP")) {
       return this.DateTimeLiteral();
     }
-    return this.notImplemented("NonIntervalLiteral");
+    throw new Error("Invalid NonIntervalLiteral");
   }
 
   NumericLiteral() {
@@ -2191,7 +2205,7 @@ class CalciteParser {
       const literal = this.SimpleStringLiteral();
       return { type: "UnsignedNumericLiteral", value: { type: "DECIMAL", literal } };
     }
-    return this.notImplemented("UnsignedNumericLiteral");
+    throw new Error("Invalid UnsignedNumericLiteral");
   }
 
   SpecialLiteral() {
@@ -2199,7 +2213,7 @@ class CalciteParser {
     if (this.acceptKeyword("FALSE")) return { type: "SpecialLiteral", value: "FALSE" };
     if (this.acceptKeyword("UNKNOWN")) return { type: "SpecialLiteral", value: "UNKNOWN" };
     if (this.acceptKeyword("NULL")) return { type: "SpecialLiteral", value: "NULL" };
-    return this.notImplemented("SpecialLiteral");
+    throw new Error("Invalid SpecialLiteral");
   }
 
   DateTimeLiteral() {
@@ -2240,7 +2254,7 @@ class CalciteParser {
       const value = this.SimpleStringLiteral();
       return { type: "DateTimeLiteral", kind, value };
     }
-    return this.notImplemented("DateTimeLiteral");
+    throw new Error("Invalid DateTimeLiteral");
   }
 
   IntervalLiteral() {
@@ -2270,7 +2284,7 @@ class CalciteParser {
       else if (this.acceptKeyword("HOUR")) to = "HOUR";
       else if (this.acceptKeyword("MINUTE")) to = "MINUTE";
       else if (this.acceptKeyword("SECOND")) to = "SECOND";
-      else return this.notImplemented("IntervalQualifier");
+      else throw new Error("Invalid IntervalQualifier");
       base.to = to;
     }
     return base;
@@ -2300,7 +2314,7 @@ class CalciteParser {
       }
       return { type: "IntervalQualifier", unit: "SECOND", precision, scale };
     }
-    return this.notImplemented("IntervalQualifierStart");
+    throw new Error("Invalid IntervalQualifierStart");
   }
 
   AddSetOpQuery() {
