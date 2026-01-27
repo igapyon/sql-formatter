@@ -203,23 +203,63 @@ AtomicRowExpression::= Literal | DynamicParam | BuiltinFunctionCall | JdbcFuncti
 BuiltinFunctionCall ::= ( "CAST" | "SAFE_CAST" | "TRY_CAST" ) "(" Expression "AS" ( DataType | "INTERVAL" IntervalQualifier ) [ "FORMAT" StringLiteral ] ")"
                       | "EXTRACT" "(" TimeUnitOrName "FROM" Expression ")"
                       | "POSITION" "(" AtomicRowExpression "IN" Expression [ "FROM" Expression ] ")"
-                      | "CONVERT" "(" ( Expression "USING" SimpleIdentifier | DataType "," Expression [ "," ( UnsignedNumericLiteral | "NULL" ) ] ) ")"
+                      | "CONVERT" "("
+                          ( Expression "USING" SimpleIdentifier
+                          | Expression "," SimpleIdentifier [ "," SimpleIdentifier ]
+                          | ( DataType | "INTERVAL" IntervalQualifier ) "," Expression [ "," ( UnsignedNumericLiteral | "NULL" ) ]
+                          )
+                        ")"
                       | "TRANSLATE" "(" Expression ( "USING" SimpleIdentifier | { "," Expression } ) ")"
                       | "OVERLAY" "(" Expression "PLACING" Expression "FROM" Expression [ "FOR" Expression ] ")"
-                      | ( "FLOOR" | "CEIL" ) "(" Expression [ "TO" TimeUnitOrName ] ")" [ OverClause ]
+                      | ( "FLOOR" | "CEIL" | "CEILING" ) "(" Expression [ "TO" TimeUnitOrName ] ")" [ OverClause ]
                       | "SUBSTRING" "(" Expression ( "FROM" | "," ) Expression [ ( "FOR" | "," ) Expression ] ")"
-                      | "TRIM" "(" [ ( "BOTH" | "TRAILING" | "LEADING" ) [ Expression ] "FROM" ] Expression ")"
-                      | DateDiffFunctionCall | TimestampAddFunctionCall | JsonFunctionCall | GroupByWindowingCall | ...
+                      | "TRIM" "("
+                          ( ( "BOTH" | "TRAILING" | "LEADING" ) [ Expression ] "FROM" Expression
+                          | Expression [ "FROM" Expression ]
+                          )
+                        ")"
+                      | ContainsSubstrFunctionCall
+                      | DateTimeConstructorCall
+                      | DateDiffFunctionCall | DateTruncFunctionCall | DatetimeTruncFunctionCall
+                      | TimestampAddFunctionCall | TimestampDiffFunctionCall | TimestampDiff3FunctionCall | TimestampTruncFunctionCall
+                      | DatetimeDiffFunctionCall | TimeDiffFunctionCall | TimeTruncFunctionCall
+                      | MatchRecognizeFunctionCall
+                      | JsonExistsFunctionCall | JsonValueFunctionCall | JsonQueryFunctionCall
+                      | JsonObjectFunctionCall | JsonObjectAggFunctionCall
+                      | JsonArrayFunctionCall | JsonArrayAggFunctionCall
+                      | GroupByWindowingCall | ...
 
-JsonFunctionCall    ::= "JSON_VALUE" "(" JsonApiCommonSyntax [ "RETURNING" DataType ] { JsonValueBehavior "ON" ( "EMPTY" | "ERROR" ) } ")"
-                      | "JSON_QUERY" "(" JsonApiCommonSyntax [ "RETURNING" DataType ] [ JsonWrapperBehavior "WRAPPER" ] { JsonQueryBehavior "ON" ( "EMPTY" | "ERROR" ) } ")"
-                      | "JSON_OBJECT" "(" [ JsonNameAndValue { "," JsonNameAndValue } ] [ JsonConstructorNullClause ] ")"
-                      | "JSON_ARRAY" "(" [ Expression { "," Expression } ] [ JsonConstructorNullClause ] ")"
+JsonApiCommonSyntax ::= Expression "," Expression
+                        [ "PASSING" Expression "AS" SimpleIdentifier { "," Expression "AS" SimpleIdentifier } ]
+JsonReturningClause ::= "RETURNING" DataType
+JsonExistsFunctionCall ::= "JSON_EXISTS" "(" JsonApiCommonSyntax [ JsonExistsErrorBehavior "ON" "ERROR" ] ")"
+JsonExistsErrorBehavior ::= "TRUE" | "FALSE" | "UNKNOWN" | "ERROR"
 
-CaseExpression      ::= "CASE" [ Expression ] { "WHEN" Expression "THEN" Expression } [ "ELSE" Expression ] "END"
-MultisetConstructor ::= "MULTISET" ( "(" OrderedQueryOrExpr ")" | "[" ExpressionList "]" )
-ArrayConstructor    ::= "ARRAY" ( "(" OrderedQueryOrExpr ")" | "[" [ ExpressionList ] "]" | "(" [ ExpressionList ] ")" )
-MapConstructor      ::= "MAP" ( "(" OrderedQueryOrExpr ")" | "[" [ ExpressionList ] "]" | "(" [ ExpressionList ] ")" )
+JsonValueFunctionCall  ::= "JSON_VALUE" "(" JsonApiCommonSyntax
+                           [ JsonReturningClause ]
+                           { JsonValueBehavior "ON" ( "EMPTY" | "ERROR" ) } ")"
+JsonValueBehavior      ::= "ERROR" | "NULL" | ( "DEFAULT" Expression )
+
+JsonQueryFunctionCall  ::= "JSON_QUERY" "(" JsonApiCommonSyntax
+                           [ JsonReturningClause ]
+                           [ JsonWrapperBehavior "WRAPPER" ]
+                           { JsonQueryBehavior "ON" ( "EMPTY" | "ERROR" ) } ")"
+JsonWrapperBehavior    ::= "WITHOUT" [ "ARRAY" ]
+                         | "WITH" "CONDITIONAL" [ "ARRAY" ]
+                         | "WITH" [ "UNCONDITIONAL" ] [ "ARRAY" ]
+JsonQueryBehavior      ::= "ERROR" | "NULL" | "EMPTY" "ARRAY" | "EMPTY" "OBJECT"
+
+JsonObjectFunctionCall ::= "JSON_OBJECT" "(" [ JsonNameAndValue { "," JsonNameAndValue } ] [ JsonConstructorNullClause ] ")"
+JsonObjectAggFunctionCall ::= "JSON_OBJECTAGG" "(" JsonNameAndValue [ JsonConstructorNullClause ] ")"
+JsonArrayFunctionCall  ::= "JSON_ARRAY" "(" [ Expression { "," Expression } ] [ JsonConstructorNullClause ] ")"
+JsonArrayAggFunctionCall ::= "JSON_ARRAYAGG" "(" Expression [ OrderBy ] [ JsonConstructorNullClause ] ")"
+                           [ WithinGroupClause ]
+WithinGroupClause    ::= "WITHIN" "GROUP" "(" OrderBy ")"
+
+CaseExpression      ::= "CASE" [ Expression ] { "WHEN" ExpressionList "THEN" Expression } [ "ELSE" Expression ] "END"
+MultisetConstructor ::= "MULTISET" ( "(" LeafQueryOrExpr ")" | "[" ExpressionList "]" )
+ArrayConstructor    ::= "ARRAY" ( "(" ")" | "(" ( OrderedQueryOrExpr | ExpressionList ) ")" | "[" [ ExpressionList ] "]" )
+MapConstructor      ::= "MAP" ( "(" ")" | "(" ( OrderedQueryOrExpr | ExpressionList ) ")" | "[" [ ExpressionList ] "]" )
 
 ```
 
@@ -228,18 +268,46 @@ MapConstructor      ::= "MAP" ( "(" OrderedQueryOrExpr ")" | "[" [ ExpressionLis
 ```ebnf
 DataType           ::= TypeName { ( "MULTISET" | "ARRAY" ) }
 TypeName           ::= SqlTypeName | RowTypeName | MapTypeName | CompoundIdentifier
-SqlTypeName        ::= "BOOLEAN" | ( "INTEGER" | "INT" ) [ "UNSIGNED" ] | "TINYINT" [ "UNSIGNED" ] | "SMALLINT" [ "UNSIGNED" ] | "BIGINT" [ "UNSIGNED" ] 
-                     | "REAL" | "DOUBLE" [ "PRECISION" ] | "FLOAT" | "BINARY" [ "VARYING" ] | "VARBINARY" | "UUID"
-                     | ( "DECIMAL" | "DEC" | "NUMERIC" ) [ "(" UnsignedIntLiteral [ "," IntLiteral ] ")" ]
-                     | ( "CHARACTER" [ "VARYING" ] | "CHAR" | "VARCHAR" ) [ "(" UnsignedIntLiteral ")" ] [ "CHARACTER" "SET" Identifier ]
-                     | "DATE" | "TIME" [ Precision ] [ TimeZoneOpt ] | "TIMESTAMP" [ Precision ] [ TimeZoneOpt ] | "GEOMETRY" | "VARIANT"
+SqlTypeName        ::= SqlTypeName1 | SqlTypeName2 | SqlTypeName3 | CharacterTypeName | DateTimeTypeName
+SqlTypeName1       ::= "GEOMETRY" | "BOOLEAN"
+                     | ( "INTEGER" | "INT" ) [ "UNSIGNED" ] | "UNSIGNED"
+                     | "TINYINT" [ "UNSIGNED" ] | "SMALLINT" [ "UNSIGNED" ] | "BIGINT" [ "UNSIGNED" ]
+                     | "REAL" | "DOUBLE" [ "PRECISION" ] | "FLOAT"
+                     | "VARIANT" | "UUID"
+SqlTypeName2       ::= ( "BINARY" [ "VARYING" ] | "VARBINARY" ) [ Precision ]
+SqlTypeName3       ::= ( "DECIMAL" | "DEC" | "NUMERIC" | "ANY" ) [ "(" UnsignedIntLiteral [ "," IntLiteral ] ")" ]
+CharacterTypeName  ::= ( ( "CHARACTER" | "CHAR" ) [ "VARYING" ] | "VARCHAR" )
+                       [ Precision ] [ "CHARACTER" "SET" Identifier ]
+DateTimeTypeName   ::= "DATE"
+                     | "TIME" [ Precision ] [ TimeZoneOpt ]
+                     | "TIMESTAMP" [ Precision ] [ TimeZoneOpt ]
+TimeZoneOpt        ::= "WITH" [ "LOCAL" ] "TIME" "ZONE"
+                     | "WITHOUT" "TIME" "ZONE"
+                     | /* empty */
 
-RowTypeName        ::= "ROW" "(" SimpleIdentifier DataType [ "NULL" | "NOT" "NULL" ] { "," ... } ")"
+RowTypeName        ::= "ROW" "(" SimpleIdentifier DataType [ "NULL" | "NOT" "NULL" ]
+                       { "," SimpleIdentifier DataType [ "NULL" | "NOT" "NULL" ] } ")"
 MapTypeName        ::= "MAP" "<" DataType "," DataType ">"
 
-Literal            ::= NumericLiteral | StringLiteral | SpecialLiteral | DateTimeLiteral | IntervalLiteral
-NumericLiteral     ::= [ "+" | "-" ] ( UnsignedInteger | Decimal | Approx )
+Literal            ::= NonIntervalLiteral | IntervalLiteral
+NonIntervalLiteral ::= NumericLiteral | StringLiteral | SpecialLiteral | DateTimeLiteral
+NumericLiteral     ::= [ "+" | "-" ] UnsignedNumericLiteral
+UnsignedNumericLiteral ::= UnsignedInteger | DecimalNumeric | DecimalStringLiteral | ApproxNumeric
+UnsignedInteger     ::= UNSIGNED_INTEGER_LITERAL
+DecimalNumeric      ::= DECIMAL_NUMERIC_LITERAL
+DecimalStringLiteral::= "DECIMAL" SimpleStringLiteral
+ApproxNumeric       ::= APPROX_NUMERIC_LITERAL
 SpecialLiteral     ::= "TRUE" | "FALSE" | "UNKNOWN" | "NULL"
-DateTimeLiteral    ::= "DATE" StringLiteral | "TIME" StringLiteral | "TIMESTAMP" StringLiteral | "{d '...'}" | "{t '...'}" | "{ts '...'}"
-IntervalLiteral    ::= "INTERVAL" [ "+" | "-" ] StringLiteral IntervalQualifier
-IntervalQualifier  ::= TimeUnit [ "(" Precision [ "," Precision ] ")" ] [ "TO" TimeUnit ]
+DateTimeLiteral    ::= "{d" StringLiteral "}" | "{t" StringLiteral "}" | "{ts" StringLiteral "}"
+                     | "DATE" SimpleStringLiteral
+                     | "DATETIME" SimpleStringLiteral
+                     | "TIME" SimpleStringLiteral
+                     | "UUID" SimpleStringLiteral
+                     | "TIMESTAMP" SimpleStringLiteral
+                     | "TIME" "WITH" [ "LOCAL" ] "TIME" "ZONE" SimpleStringLiteral
+                     | "TIMESTAMP" "WITH" [ "LOCAL" ] "TIME" "ZONE" SimpleStringLiteral
+IntervalLiteral    ::= "INTERVAL" [ "+" | "-" ] SimpleStringLiteral IntervalQualifier
+IntervalQualifier  ::= ( "YEAR" | "QUARTER" | "MONTH" | "WEEK" | "DAY" | "HOUR" | "MINUTE" )
+                       [ "(" UnsignedIntLiteral ")" ]
+                       [ "TO" ( "MONTH" | "HOUR" | "MINUTE" | "SECOND" ) ]
+                     | "SECOND" [ "(" UnsignedIntLiteral [ "," UnsignedIntLiteral ] ")" ]
