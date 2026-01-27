@@ -20,22 +20,100 @@ class CalciteLexer {
         this.pos++;
         continue;
       }
+      // line comment
+      if (ch === "-" && s[this.pos + 1] === "-") {
+        this.pos += 2;
+        while (this.pos < s.length && s[this.pos] !== "\n") this.pos++;
+        continue;
+      }
+      // block comment
+      if (ch === "/" && s[this.pos + 1] === "*") {
+        this.pos += 2;
+        while (this.pos < s.length && !(s[this.pos] === "*" && s[this.pos + 1] === "/")) {
+          this.pos++;
+        }
+        if (this.pos < s.length) this.pos += 2;
+        continue;
+      }
       // strings (single-quoted, no escape handling)
       if (ch === "'") {
         let value = "";
         this.pos++;
-        while (this.pos < s.length && s[this.pos] !== "'") {
+        while (this.pos < s.length) {
+          if (s[this.pos] === "'") {
+            if (s[this.pos + 1] === "'") {
+              value += "'";
+              this.pos += 2;
+              continue;
+            }
+            break;
+          }
+          if (s[this.pos] === "\\" && this.pos + 1 < s.length) {
+            value += s[this.pos + 1];
+            this.pos += 2;
+            continue;
+          }
           value += s[this.pos++];
         }
-        this.pos++;
+        if (s[this.pos] === "'") this.pos++;
         this.tokens.push({ type: "STRING", value });
         continue;
       }
-      // numbers
-      if (/[0-9]/.test(ch)) {
+      // quoted identifiers
+      if (ch === '"' || ch === "`") {
+        const quote = ch;
         let value = "";
-        while (this.pos < s.length && /[0-9\.]/.test(s[this.pos])) {
+        this.pos++;
+        while (this.pos < s.length) {
+          if (s[this.pos] === quote) {
+            if (s[this.pos + 1] === quote) {
+              value += quote;
+              this.pos += 2;
+              continue;
+            }
+            break;
+          }
           value += s[this.pos++];
+        }
+        if (s[this.pos] === quote) this.pos++;
+        this.tokens.push({ type: "IDENT", value });
+        continue;
+      }
+      // numbers (including leading dot and exponent)
+      if (/[0-9]/.test(ch) || (ch === "." && /[0-9]/.test(s[this.pos + 1]))) {
+        let value = "";
+        if (ch === ".") {
+          value += ".";
+          this.pos++;
+          while (this.pos < s.length && /[0-9]/.test(s[this.pos])) {
+            value += s[this.pos++];
+          }
+        } else {
+          while (this.pos < s.length && /[0-9]/.test(s[this.pos])) {
+            value += s[this.pos++];
+          }
+          if (s[this.pos] === ".") {
+            value += ".";
+            this.pos++;
+            while (this.pos < s.length && /[0-9]/.test(s[this.pos])) {
+              value += s[this.pos++];
+            }
+          }
+        }
+        if (/[eE]/.test(s[this.pos])) {
+          const e = s[this.pos];
+          const sign = s[this.pos + 1];
+          if (/[0-9\+\-]/.test(sign) && /[0-9]/.test(s[this.pos + 2] || "")) {
+            value += e;
+            this.pos++;
+            if (sign === "+" || sign === "-") {
+              value += sign;
+              this.pos++;
+            }
+            while (this.pos < s.length && /[0-9]/.test(s[this.pos])) {
+              value += s[this.pos++];
+            }
+          }
         }
         this.tokens.push({ type: "NUMBER", value });
         continue;
@@ -180,8 +258,9 @@ class CalciteParser {
     const keywords = new Set([
       "FROM", "WHERE", "GROUP", "HAVING", "WINDOW", "QUALIFY", "ORDER", "LIMIT", "OFFSET", "FETCH",
       "UNION", "INTERSECT", "EXCEPT",
-      "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "ASOF",
-      "SET", "USING", "ON", "WHEN",
+      "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "ASOF", "NATURAL",
+      "SET", "USING", "ON", "WHEN", "FOR",
+      "MATCH_RECOGNIZE",
     ]);
     return keywords.has(value);
   }
@@ -580,6 +659,12 @@ class CalciteParser {
     } else if (this.isKeyword("FETCH")) {
       fetch = this.FetchClause();
     }
+    if (fetch && !orderBy) {
+      throw new Error("FETCH requires ORDER BY");
+    }
+    if (limit && fetch) {
+      throw new Error("LIMIT and FETCH cannot be combined");
+    }
     return { type: "OrderByLimitOpt", orderBy, limit, offset, fetch };
   }
 
@@ -671,6 +756,13 @@ class CalciteParser {
     while (this.acceptSymbol(",")) {
       selectItems.push(this.AddSelectItem());
     }
+    if (!this.isKeyword("FROM")) {
+      if (this.isKeyword("WHERE") || this.isKeyword("GROUP") || this.isKeyword("HAVING") ||
+          this.isKeyword("WINDOW") || this.isKeyword("QUALIFY")) {
+        const t = this.peek();
+        throw new Error(`Expected FROM before ${String(t.value).toUpperCase()}`);
+      }
+    }
     let from = null;
     let where = null;
     let groupBy = null;
@@ -684,6 +776,9 @@ class CalciteParser {
       if (this.isKeyword("HAVING")) having = this.Having();
       if (this.isKeyword("WINDOW")) window = this.Window();
       if (this.isKeyword("QUALIFY")) qualify = this.Qualify();
+    }
+    if (having && !groupBy) {
+      throw new Error("HAVING requires GROUP BY");
     }
     return {
       type: "SqlSelect",
@@ -718,7 +813,17 @@ class CalciteParser {
   WindowSpecification() {
     this.expectSymbol("(");
     let name = null;
-    if (this.peek().type === "IDENT") {
+    if (
+      this.peek().type === "IDENT" &&
+      !this.isKeyword("PARTITION") &&
+      !this.isKeyword("ORDER") &&
+      !this.isKeyword("ROWS") &&
+      !this.isKeyword("RANGE") &&
+      !this.isKeyword("GROUPS") &&
+      !this.isKeyword("EXCLUDE") &&
+      !this.isKeyword("ALLOW") &&
+      !this.isKeyword("DISALLOW")
+    ) {
       name = this.SimpleIdentifier();
     }
     let partitionBy = null;
@@ -744,6 +849,9 @@ class CalciteParser {
       }
       const exclusion = this.WindowExclusion();
       frame.exclusion = exclusion;
+    }
+    if (frame && !orderBy) {
+      throw new Error("Window frame requires ORDER BY");
     }
     let partial = null;
     if (this.acceptKeyword("ALLOW") || this.acceptKeyword("DISALLOW")) {
@@ -913,6 +1021,12 @@ class CalciteParser {
     } else if (this.acceptKeyword("USING")) {
       condition = { type: "Using", columns: this.ParenthesizedSimpleIdentifierList() };
     }
+    if (!natural && joinType !== "CROSS JOIN" && !condition) {
+      throw new Error("JOIN requires ON or USING");
+    }
+    if (natural && condition) {
+      throw new Error("NATURAL JOIN cannot use ON or USING");
+    }
     return { type: "JoinTable", natural, joinType, table, condition };
   }
 
@@ -983,6 +1097,8 @@ class CalciteParser {
     if (this.isKeyword("PIVOT")) pivot = this.Pivot();
     let unpivot = null;
     if (this.isKeyword("UNPIVOT")) unpivot = this.Unpivot();
+    let matchRecognize = null;
+    if (this.isKeyword("MATCH_RECOGNIZE")) matchRecognize = this.MatchRecognize();
     // alias
     let alias = null;
     let columns = null;
@@ -991,7 +1107,10 @@ class CalciteParser {
       if (this.isSymbol("(")) {
         columns = this.ParenthesizedSimpleIdentifierList();
       }
-    } else if (this.peek().type === "IDENT") {
+    } else if (
+      this.peek().type === "IDENT" &&
+      !this.isClauseKeyword(String(this.peek().value).toUpperCase())
+    ) {
       alias = this.SimpleIdentifier();
       if (this.isSymbol("(")) {
         columns = this.ParenthesizedSimpleIdentifierList();
@@ -1001,7 +1120,7 @@ class CalciteParser {
     if (this.isKeyword("TABLESAMPLE")) {
       tablesample = this.Tablesample();
     }
-    return { type: "TableRef", base, pivot, unpivot, alias, columns, tablesample };
+    return { type: "TableRef", base, pivot, unpivot, matchRecognize, alias, columns, tablesample };
   }
 
   Snapshot() {
@@ -3359,6 +3478,7 @@ class CalciteParser {
 
   PatternFactor() {
     const primary = this.PatternPrimary();
+    if (!primary) return null;
     let quantifier = null;
     if (this.acceptSymbol("*")) quantifier = { kind: "*" };
     else if (this.acceptSymbol("+")) quantifier = { kind: "+" };
@@ -3944,34 +4064,13 @@ class CalciteParser {
 
 }
 
-module.exports = {
-  CalciteLexer,
-  CalciteParser,
-};
-
-if (require.main === module) {
-  const samples = [
-    "SELECT 1",
-    "SELECT /*+ index(t) */ a AS x FROM t WHERE a IS NOT DISTINCT FROM b",
-    "WITH t AS (SELECT 1) SELECT * FROM t",
-    "EXPLAIN PLAN FOR SELECT 1",
-    "INSERT INTO t(a) VALUES (1)",
-    "UPDATE t SET a = 1 WHERE b = 2",
-    "DELETE FROM t WHERE a IN (1,2,3)",
-    "MERGE INTO t USING u ON t.id = u.id WHEN MATCHED THEN UPDATE SET a = 1",
-    "SELECT ARRAY_AGG(x) FROM t",
-    "SELECT JSON_VALUE(doc, '$.a' RETURNING VARCHAR) FROM t",
-    "SELECT DATE_DIFF(d1, d2, DAY) FROM t",
-  ];
-  for (const src of samples) {
-    const lexer = new CalciteLexer(src);
-    const tokens = lexer.tokenize();
-    const parser = new CalciteParser(tokens);
-    try {
-      parser.SqlStmtList();
-      console.log(`OK: ${src}`);
-    } catch (e) {
-      console.error(`NG: ${src} -> ${e.message}`);
-    }
-  }
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    CalciteLexer,
+    CalciteParser,
+  };
+}
+if (typeof window !== "undefined") {
+  window.CalciteLexer = CalciteLexer;
+  window.CalciteParser = CalciteParser;
 }

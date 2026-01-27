@@ -16,9 +16,67 @@ const cases = [
   { name: 'json-value', sql: "SELECT JSON_VALUE(doc, '$.a' RETURNING VARCHAR) FROM t", fn: 'SqlStmtList' },
   { name: 'date-diff', sql: 'SELECT DATE_DIFF(d1, d2, DAY) FROM t', fn: 'SqlStmtList' },
   { name: 'match-recognize', sql: 'SELECT * FROM t MATCH_RECOGNIZE (PATTERN (A) DEFINE A AS a > 0)', fn: 'SqlStmtList' },
+  { name: 'match-recognize-partition-order', sql: 'SELECT * FROM t MATCH_RECOGNIZE (PARTITION BY a ORDER BY b MEASURES CLASSIFIER() AS c PATTERN (A B) DEFINE A AS a > 0, B AS b > 0)', fn: 'SqlStmtList' },
+  { name: 'match-recognize-after-skip', sql: 'SELECT * FROM t MATCH_RECOGNIZE (AFTER MATCH SKIP TO NEXT ROW PATTERN (A) DEFINE A AS a > 0)', fn: 'SqlStmtList' },
   { name: 'pivot', sql: 'SELECT * FROM t PIVOT (SUM(x) FOR y IN (1))', fn: 'SqlStmtList' },
+  { name: 'pivot-multi-values', sql: 'SELECT * FROM t PIVOT (SUM(x) FOR y IN (1 AS one, 2 AS two))', fn: 'SqlStmtList' },
+  { name: 'pivot-multi-aggs', sql: 'SELECT * FROM t PIVOT (SUM(x) AS sx, COUNT(*) FOR y IN (1))', fn: 'SqlStmtList' },
   { name: 'unpivot', sql: 'SELECT * FROM t UNPIVOT (v FOR c IN (a))', fn: 'SqlStmtList' },
+  { name: 'window-order-frame', sql: 'SELECT a FROM t WINDOW w AS (PARTITION BY a ORDER BY b ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING)', fn: 'SqlStmtList' },
+  { name: 'window-range', sql: 'SELECT a FROM t WINDOW w AS (ORDER BY a RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)', fn: 'SqlStmtList' },
+  { name: 'window-allow-partial', sql: 'SELECT a FROM t WINDOW w AS (ORDER BY b ALLOW PARTIAL)', fn: 'SqlStmtList' },
+  { name: 'lexer-line-comment', sql: 'SELECT 1 -- trailing comment', fn: 'SqlStmtList' },
+  { name: 'lexer-block-comment', sql: 'SELECT /* block */ 1', fn: 'SqlStmtList' },
+  { name: 'lexer-quoted-ident-double', sql: 'SELECT "Select" FROM "From"', fn: 'SqlStmtList' },
+  { name: 'lexer-quoted-ident-backtick', sql: 'SELECT `a` FROM `b`', fn: 'SqlStmtList' },
+  { name: 'lexer-string-escape', sql: "SELECT 'a''b' FROM t", fn: 'SqlStmtList' },
+  { name: 'lexer-number-exponent', sql: 'SELECT 1.2e-3 FROM t', fn: 'SqlStmtList' },
+  { name: 'lexer-number-leading-dot', sql: 'SELECT .5 FROM t', fn: 'SqlStmtList' },
+  { name: 'ddl-set', sql: 'SET foo = 1', fn: 'SqlStmtList' },
+  { name: 'ddl-reset', sql: 'RESET foo', fn: 'SqlStmtList' },
+  { name: 'ddl-reset-all', sql: 'RESET ALL', fn: 'SqlStmtList' },
+  { name: 'ddl-alter-system-set', sql: 'ALTER SYSTEM SET foo = ON', fn: 'SqlStmtList' },
+  { name: 'ddl-alter-session-reset', sql: 'ALTER SESSION RESET foo', fn: 'SqlStmtList' },
+  { name: 'ddl-explain', sql: 'EXPLAIN PLAN INCLUDING ATTRIBUTES WITH TYPE AS JSON FOR SELECT 1', fn: 'SqlStmtList' },
+  { name: 'ddl-describe-table', sql: 'DESCRIBE TABLE t', fn: 'SqlStmtList' },
+  { name: 'ddl-describe-database', sql: 'DESCRIBE DATABASE db', fn: 'SqlStmtList' },
+  { name: 'ddl-describe-statement', sql: 'DESCRIBE STATEMENT SELECT 1', fn: 'SqlStmtList' },
+  { name: 'ddl-call', sql: 'CALL foo(1)', fn: 'SqlStmtList' },
 ];
+
+const negativeCases = [
+  { name: 'neg-having-without-group', sql: 'SELECT a FROM t HAVING a > 0', fn: 'SqlStmtList' },
+  { name: 'neg-natural-join-on', sql: 'SELECT * FROM a NATURAL JOIN b ON a.id = b.id', fn: 'SqlStmtList' },
+  { name: 'neg-join-no-condition', sql: 'SELECT * FROM a JOIN b', fn: 'SqlStmtList' },
+  { name: 'neg-window-frame-without-order', sql: 'SELECT a FROM t WINDOW w AS (ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING)', fn: 'SqlStmtList' },
+  { name: 'neg-fetch-without-order', sql: 'SELECT * FROM t FETCH FIRST 1 ROW ONLY', fn: 'SqlStmtList' },
+  { name: 'neg-limit-and-fetch', sql: 'SELECT * FROM t ORDER BY a LIMIT 1 FETCH FIRST 1 ROW ONLY', fn: 'SqlStmtList' },
+  { name: 'neg-where-without-from', sql: 'SELECT a WHERE a > 0', fn: 'SqlStmtList' },
+];
+
+if (require.main === module) {
+  const samples = [
+    "SELECT 1",
+    "SELECT /*+ index(t) */ a AS x FROM t WHERE a IS NOT DISTINCT FROM b",
+    "WITH t AS (SELECT 1) SELECT * FROM t",
+    "EXPLAIN PLAN FOR SELECT 1",
+    "INSERT INTO t(a) VALUES (1)",
+    "UPDATE t SET a = 1 WHERE b = 2",
+    "DELETE FROM t WHERE a IN (1,2,3)",
+    "MERGE INTO t USING u ON t.id = u.id WHEN MATCHED THEN UPDATE SET a = 1",
+    "SELECT ARRAY_AGG(x) FROM t",
+    "SELECT JSON_VALUE(doc, '$.a' RETURNING VARCHAR) FROM t",
+    "SELECT DATE_DIFF(d1, d2, DAY) FROM t",
+  ];
+  for (const src of samples) {
+    try {
+      runCase({ name: 'sample', sql: src, fn: 'SqlStmtList' });
+      console.log(`OK: ${src}`);
+    } catch (e) {
+      console.error(`NG: ${src} -> ${e.message}`);
+    }
+  }
+}
 
 function runCase({ name, sql, fn }) {
   const lexer = new CalciteLexer(sql);
@@ -42,9 +100,24 @@ for (const c of cases) {
   }
 }
 
+for (const c of negativeCases) {
+  let ok = false;
+  try {
+    runCase(c);
+  } catch (_err) {
+    ok = true;
+  }
+  if (ok) {
+    console.log(`OK  ${c.name} (rejected)`);
+  } else {
+    failed++;
+    console.error(`NG  ${c.name}: expected rejection`);
+  }
+}
+
 if (failed > 0) {
   console.error(`\nFAILED: ${failed}`);
   process.exit(1);
 }
 
-console.log(`\nALL OK: ${cases.length}`);
+console.log(`\nALL OK: ${cases.length + negativeCases.length}`);
