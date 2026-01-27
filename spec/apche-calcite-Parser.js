@@ -3768,11 +3768,36 @@ class CalciteParser {
   }
 
   JdbcOdbcDataTypeName() {
+    const names = [
+      "SQL_CHAR", "CHAR", "SQL_VARCHAR", "VARCHAR",
+      "SQL_DATE", "DATE", "SQL_TIME", "TIME",
+      "SQL_TIMESTAMP", "TIMESTAMP",
+      "SQL_DECIMAL", "DECIMAL", "SQL_NUMERIC", "NUMERIC",
+      "SQL_BOOLEAN", "BOOLEAN",
+      "SQL_INTEGER", "INTEGER", "SQL_BINARY", "BINARY",
+      "SQL_VARBINARY", "VARBINARY", "SQL_TINYINT", "TINYINT",
+      "SQL_SMALLINT", "SMALLINT", "SQL_BIGINT", "BIGINT",
+      "SQL_REAL", "REAL", "SQL_DOUBLE", "DOUBLE",
+      "SQL_FLOAT", "FLOAT",
+      "SQL_INTERVAL_YEAR", "SQL_INTERVAL_YEAR_TO_MONTH",
+      "SQL_INTERVAL_MONTH", "SQL_INTERVAL_DAY",
+      "SQL_INTERVAL_DAY_TO_HOUR", "SQL_INTERVAL_DAY_TO_MINUTE",
+      "SQL_INTERVAL_DAY_TO_SECOND", "SQL_INTERVAL_HOUR",
+      "SQL_INTERVAL_HOUR_TO_MINUTE", "SQL_INTERVAL_HOUR_TO_SECOND",
+      "SQL_INTERVAL_MINUTE", "SQL_INTERVAL_MINUTE_TO_SECOND",
+      "SQL_INTERVAL_SECOND",
+    ];
+    for (const n of names) {
+      if (this.acceptKeyword(n)) {
+        return { type: "JdbcOdbcDataTypeName", value: n };
+      }
+    }
     return this.notImplemented("JdbcOdbcDataTypeName");
   }
 
   JdbcOdbcDataType() {
-    return this.notImplemented("JdbcOdbcDataType");
+    const name = this.JdbcOdbcDataTypeName();
+    return { type: "JdbcOdbcDataType", name };
   }
 
   CollectionsTypeName() {
