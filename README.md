@@ -3,6 +3,8 @@
 このリポジトリは、最終的に **SQL Formatter** を作るためのプロジェクトです。
 現在は前段として **SQL パーサー** を実装しています。
 
+![Playground screenshot](screenshot.png)
+
 ## 目的
 - 最終目標: SQL を整形するフォーマッタの実装
 - 現状: SQL パーサーを自作し、AST を生成する段階
