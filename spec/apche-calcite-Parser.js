@@ -1779,7 +1779,7 @@ class CalciteParser {
     if (this.acceptKeyword("FALSE")) return "FALSE";
     if (this.acceptKeyword("UNKNOWN")) return "UNKNOWN";
     if (this.acceptKeyword("ERROR")) return "ERROR";
-    return this.notImplemented("JsonExistsErrorBehavior");
+    return null;
   }
 
   JsonValueFunctionCall() {
@@ -1861,7 +1861,7 @@ class CalciteParser {
       const array = Boolean(this.acceptKeyword("ARRAY"));
       return { type: "JsonQueryWrapperBehavior", mode: "WITH", conditional, array };
     }
-    return this.notImplemented("JsonQueryWrapperBehavior");
+    return null;
   }
 
   JsonQueryEmptyOrErrorBehavior() {
@@ -2328,7 +2328,7 @@ class CalciteParser {
     if (this.acceptKeyword("UNION")) kind = "UNION";
     else if (this.acceptKeyword("INTERSECT")) kind = "INTERSECT";
     else if (this.acceptKeyword("EXCEPT")) kind = "EXCEPT";
-    else return this.notImplemented("BinaryQueryOperator");
+    else return null;
     let quantifier = null;
     if (this.acceptKeyword("ALL")) quantifier = "ALL";
     else if (this.acceptKeyword("DISTINCT")) quantifier = "DISTINCT";
@@ -2450,7 +2450,7 @@ class CalciteParser {
       this.expectSymbol(")");
       return { type: "SimpleIdentifierList", items };
     }
-    return this.notImplemented("SimpleIdentifierOrListOrEmpty");
+    return null;
   }
 
   ParenthesizedSimpleIdentifierList() {

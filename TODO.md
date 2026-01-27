@@ -38,10 +38,6 @@
 - 失敗時は notImplemented を残して段階的に埋める。
 
 ## 未実装一覧（notImplemented が残るもの）
-BuiltinFunctionCall /
-JsonExistsErrorBehavior / JsonQueryWrapperBehavior /
-BinaryQueryOperator /
-SimpleIdentifierOrListOrEmpty /
 AddExpression / AddCompoundIdentifierTypes /
 ReservedFunctionName / NonReservedKeyWord /
 StringAggFunctionCall / PercentileFunctionCall / GroupByWindowingCall /
