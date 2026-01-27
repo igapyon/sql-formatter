@@ -2129,23 +2129,77 @@ class CalciteParser {
   }
 
   MatchRecognizeFunctionCall() {
+    if (this.acceptKeyword("CLASSIFIER")) {
+      this.expectSymbol("(");
+      this.expectSymbol(")");
+      return { type: "MatchRecognizeFunctionCall", kind: "CLASSIFIER" };
+    }
+    if (this.acceptKeyword("MATCH_NUMBER")) {
+      this.expectSymbol("(");
+      this.expectSymbol(")");
+      return { type: "MatchRecognizeFunctionCall", kind: "MATCH_NUMBER" };
+    }
+    if (this.isKeyword("RUNNING") || this.isKeyword("FINAL")) {
+      return this.MatchRecognizeCallWithModifier();
+    }
+    if (this.isKeyword("FIRST") || this.isKeyword("LAST") || this.isKeyword("RUNNING") || this.isKeyword("FINAL")) {
+      return this.MatchRecognizeNavigationLogical();
+    }
+    if (this.isKeyword("PREV") || this.isKeyword("NEXT")) {
+      return this.MatchRecognizeNavigationPhysical();
+    }
     return this.notImplemented("MatchRecognizeFunctionCall");
   }
 
   MatchRecognizeCallWithModifier() {
-    return this.notImplemented("MatchRecognizeCallWithModifier");
+    let modifier;
+    if (this.acceptKeyword("RUNNING")) modifier = "RUNNING";
+    else if (this.acceptKeyword("FINAL")) modifier = "FINAL";
+    else return this.notImplemented("MatchRecognizeCallWithModifier");
+    const call = this.NamedFunctionCall();
+    return { type: "MatchRecognizeCallWithModifier", modifier, call };
   }
 
   MatchRecognizeNavigationLogical() {
-    return this.notImplemented("MatchRecognizeNavigationLogical");
+    let modifier = null;
+    if (this.acceptKeyword("RUNNING")) modifier = "RUNNING";
+    else if (this.acceptKeyword("FINAL")) modifier = "FINAL";
+    let which;
+    if (this.acceptKeyword("FIRST")) which = "FIRST";
+    else if (this.acceptKeyword("LAST")) which = "LAST";
+    else return this.notImplemented("MatchRecognizeNavigationLogical");
+    this.expectSymbol("(");
+    const expr = this.Expression();
+    let num = null;
+    if (this.acceptSymbol(",")) {
+      num = this.NumericLiteral();
+    }
+    this.expectSymbol(")");
+    return { type: "MatchRecognizeNavigationLogical", modifier, which, expr, num };
   }
 
   MatchRecognizeNavigationPhysical() {
-    return this.notImplemented("MatchRecognizeNavigationPhysical");
+    let which;
+    if (this.acceptKeyword("PREV")) which = "PREV";
+    else if (this.acceptKeyword("NEXT")) which = "NEXT";
+    else return this.notImplemented("MatchRecognizeNavigationPhysical");
+    this.expectSymbol("(");
+    const expr = this.Expression();
+    let num = null;
+    if (this.acceptSymbol(",")) {
+      num = this.NumericLiteral();
+    }
+    this.expectSymbol(")");
+    return { type: "MatchRecognizeNavigationPhysical", which, expr, num };
   }
 
   withinDistinct() {
-    return this.notImplemented("withinDistinct");
+    this.expectKeyword("WITHIN");
+    this.expectKeyword("DISTINCT");
+    this.expectSymbol("(");
+    const list = this.ExpressionCommaList();
+    this.expectSymbol(")");
+    return { type: "withinDistinct", list };
   }
 
   withinGroup() {
@@ -2158,11 +2212,19 @@ class CalciteParser {
   }
 
   NullTreatment() {
+    if (this.acceptKeyword("IGNORE")) {
+      this.expectKeyword("NULLS");
+      return { type: "NullTreatment", value: "IGNORE" };
+    }
+    if (this.acceptKeyword("RESPECT")) {
+      this.expectKeyword("NULLS");
+      return { type: "NullTreatment", value: "RESPECT" };
+    }
     return this.notImplemented("NullTreatment");
   }
 
   nullTreatment() {
-    return this.notImplemented("nullTreatment");
+    return this.NullTreatment();
   }
 
   JdbcFunctionCall() {
