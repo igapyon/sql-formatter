@@ -44,6 +44,16 @@ const cases = [
   { name: 'ddl-call', sql: 'CALL foo(1)', fn: 'SqlStmtList' },
 ];
 
+const negativeCases = [
+  { name: 'neg-having-without-group', sql: 'SELECT a FROM t HAVING a > 0', fn: 'SqlStmtList' },
+  { name: 'neg-natural-join-on', sql: 'SELECT * FROM a NATURAL JOIN b ON a.id = b.id', fn: 'SqlStmtList' },
+  { name: 'neg-join-no-condition', sql: 'SELECT * FROM a JOIN b', fn: 'SqlStmtList' },
+  { name: 'neg-window-frame-without-order', sql: 'SELECT a FROM t WINDOW w AS (ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING)', fn: 'SqlStmtList' },
+  { name: 'neg-fetch-without-order', sql: 'SELECT * FROM t FETCH FIRST 1 ROW ONLY', fn: 'SqlStmtList' },
+  { name: 'neg-limit-and-fetch', sql: 'SELECT * FROM t ORDER BY a LIMIT 1 FETCH FIRST 1 ROW ONLY', fn: 'SqlStmtList' },
+  { name: 'neg-where-without-from', sql: 'SELECT a WHERE a > 0', fn: 'SqlStmtList' },
+];
+
 if (require.main === module) {
   const samples = [
     "SELECT 1",
@@ -90,9 +100,24 @@ for (const c of cases) {
   }
 }
 
+for (const c of negativeCases) {
+  let ok = false;
+  try {
+    runCase(c);
+  } catch (_err) {
+    ok = true;
+  }
+  if (ok) {
+    console.log(`OK  ${c.name} (rejected)`);
+  } else {
+    failed++;
+    console.error(`NG  ${c.name}: expected rejection`);
+  }
+}
+
 if (failed > 0) {
   console.error(`\nFAILED: ${failed}`);
   process.exit(1);
 }
 
-console.log(`\nALL OK: ${cases.length}`);
+console.log(`\nALL OK: ${cases.length + negativeCases.length}`);

@@ -258,7 +258,7 @@ class CalciteParser {
     const keywords = new Set([
       "FROM", "WHERE", "GROUP", "HAVING", "WINDOW", "QUALIFY", "ORDER", "LIMIT", "OFFSET", "FETCH",
       "UNION", "INTERSECT", "EXCEPT",
-      "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "ASOF",
+      "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "ASOF", "NATURAL",
       "SET", "USING", "ON", "WHEN", "FOR",
       "MATCH_RECOGNIZE",
     ]);
