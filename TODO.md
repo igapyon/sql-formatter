@@ -41,7 +41,6 @@
 AddExpression / AddCompoundIdentifierTypes /
 ReservedFunctionName / NonReservedKeyWord /
 StringAggFunctionCall / PercentileFunctionCall / GroupByWindowingCall /
-NullTreatment /
 DynamicParam / ContextVariable / SequenceExpression /
 PatternPrimary / weekdayName / Year / Quarter / Month / Week / Day / Hour / Minute / Second /
 JsonNameAndValue /

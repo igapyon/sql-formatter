@@ -3236,7 +3236,7 @@ class CalciteParser {
       this.expectKeyword("NULLS");
       return { type: "NullTreatment", value: "RESPECT" };
     }
-    return this.notImplemented("NullTreatment");
+    return null;
   }
 
   nullTreatment() {
