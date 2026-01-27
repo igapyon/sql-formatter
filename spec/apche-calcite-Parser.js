@@ -2404,6 +2404,18 @@ class CalciteParser {
   NamedFunctionCall() {
     const namedCall = this.NamedCall();
     if (!namedCall) return null;
+    let nullTreatment = null;
+    if (this.isKeyword("IGNORE") || this.isKeyword("RESPECT")) {
+      nullTreatment = this.nullTreatment();
+    }
+    let withinDistinct = null;
+    if (this.isKeyword("WITHIN") && this.isKeywordAt("DISTINCT", 1)) {
+      withinDistinct = this.withinDistinct();
+    }
+    let withinGroup = null;
+    if (this.isKeyword("WITHIN") && this.isKeywordAt("GROUP", 1)) {
+      withinGroup = this.withinGroup();
+    }
     let filter = null;
     if (this.acceptKeyword("FILTER")) {
       this.expectSymbol("(");
@@ -2419,7 +2431,7 @@ class CalciteParser {
         over = this.SimpleIdentifier();
       }
     }
-    return { type: "NamedFunctionCall", namedCall, filter, over };
+    return { type: "NamedFunctionCall", namedCall, nullTreatment, withinDistinct, withinGroup, filter, over };
   }
 
   NamedCall() {
@@ -2477,15 +2489,63 @@ class CalciteParser {
   }
 
   StringAggFunctionCall() {
-    return this.notImplemented("StringAggFunctionCall");
+    let name;
+    if (this.acceptKeyword("ARRAY_AGG")) name = "ARRAY_AGG";
+    else if (this.acceptKeyword("ARRAY_CONCAT_AGG")) name = "ARRAY_CONCAT_AGG";
+    else if (this.acceptKeyword("GROUP_CONCAT")) name = "GROUP_CONCAT";
+    else if (this.acceptKeyword("STRING_AGG")) name = "STRING_AGG";
+    else return this.notImplemented("StringAggFunctionCall");
+    this.expectSymbol("(");
+    let quantifier = null;
+    if (this.acceptKeyword("ALL")) quantifier = "ALL";
+    else if (this.acceptKeyword("DISTINCT")) quantifier = "DISTINCT";
+    const exprs = [this.Expression()];
+    while (this.acceptSymbol(",")) {
+      exprs.push(this.Expression());
+    }
+    let nullTreatment = null;
+    if (this.isKeyword("IGNORE") || this.isKeyword("RESPECT")) {
+      nullTreatment = this.NullTreatment();
+    }
+    let orderBy = null;
+    if (this.isKeyword("ORDER")) {
+      orderBy = this.OrderBy();
+    }
+    let separator = null;
+    if (this.acceptKeyword("SEPARATOR")) {
+      separator = this.StringLiteral();
+    }
+    this.expectSymbol(")");
+    return { type: "StringAggFunctionCall", name, quantifier, exprs, nullTreatment, orderBy, separator };
   }
 
   PercentileFunctionCall() {
-    return this.notImplemented("PercentileFunctionCall");
+    let name;
+    if (this.acceptKeyword("PERCENTILE_CONT")) name = "PERCENTILE_CONT";
+    else if (this.acceptKeyword("PERCENTILE_DISC")) name = "PERCENTILE_DISC";
+    else return this.notImplemented("PercentileFunctionCall");
+    this.expectSymbol("(");
+    const expr = this.Expression();
+    let numeric = null;
+    let nullTreatment = null;
+    if (this.acceptSymbol(",")) {
+      numeric = this.NumericLiteral();
+      if (this.isKeyword("IGNORE") || this.isKeyword("RESPECT")) {
+        nullTreatment = this.NullTreatment();
+      }
+    }
+    this.expectSymbol(")");
+    return { type: "PercentileFunctionCall", name, expr, numeric, nullTreatment };
   }
 
   GroupByWindowingCall() {
-    return this.notImplemented("GroupByWindowingCall");
+    let name;
+    if (this.acceptKeyword("TUMBLE")) name = "TUMBLE";
+    else if (this.acceptKeyword("HOP")) name = "HOP";
+    else if (this.acceptKeyword("SESSION")) name = "SESSION";
+    else return this.notImplemented("GroupByWindowingCall");
+    const params = this.FunctionParameterList();
+    return { type: "GroupByWindowingCall", name, params };
   }
 
   MatchRecognizeFunctionCall() {
