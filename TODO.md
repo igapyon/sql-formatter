@@ -38,5 +38,5 @@
 - 失敗時は notImplemented を残して段階的に埋める。
 
 ## 未実装一覧（notImplemented が残るもの）
-JdbcOdbcDataTypeName / CollectionsTypeName /
+CollectionsTypeName /
 Scope / comp

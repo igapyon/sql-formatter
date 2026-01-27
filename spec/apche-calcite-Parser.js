@@ -3853,7 +3853,7 @@ class CalciteParser {
         return { type: "JdbcOdbcDataTypeName", value: n };
       }
     }
-    return this.notImplemented("JdbcOdbcDataTypeName");
+    return null;
   }
 
   JdbcOdbcDataType() {
