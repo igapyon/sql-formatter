@@ -29,6 +29,47 @@ SqlProcedureCall   ::= "CALL" NamedRoutineCall
 
 ```
 
+#### 1b. DML (INSERT/UPDATE/DELETE/MERGE)
+
+```ebnf
+SqlInsert          ::= ( "INSERT" | "UPSERT" ) SqlInsertKeywords
+                       "INTO" CompoundTableIdentifier [ TableHints ] [ ExtendTable ]
+                       [ ParenthesizedCompoundIdentifierList ]
+                       OrderedQueryOrExpr
+
+SqlInsertKeywords  ::= /* empty (dialect-specific) */
+
+SqlDelete          ::= "DELETE" "FROM" CompoundTableIdentifier [ TableHints ] [ ExtendTable ]
+                       [ [ "AS" ] SimpleIdentifier ]
+                       [ Where ]
+
+SqlUpdate          ::= "UPDATE" CompoundTableIdentifier [ TableHints ] [ ExtendTable ]
+                       [ [ "AS" ] SimpleIdentifier ]
+                       "SET" CompoundIdentifier "=" Expression
+                       { "," CompoundIdentifier "=" Expression }
+                       [ Where ]
+
+SqlMerge           ::= "MERGE" "INTO" CompoundTableIdentifier [ TableHints ] [ ExtendTable ]
+                       [ [ "AS" ] SimpleIdentifier ]
+                       "USING" TableRef
+                       "ON" Expression
+                       ( WhenMatchedClause [ WhenNotMatchedClause ]
+                       | WhenNotMatchedClause
+                       )
+
+WhenMatchedClause  ::= "WHEN" "MATCHED" "THEN"
+                       "UPDATE" "SET" CompoundIdentifier "=" Expression
+                       { "," CompoundIdentifier "=" Expression }
+
+WhenNotMatchedClause ::= "WHEN" "NOT" "MATCHED" "THEN" "INSERT"
+                         SqlInsertKeywords
+                         [ ParenthesizedSimpleIdentifierList ]
+                         ( "VALUES" RowConstructor
+                         | "(" "VALUES" RowConstructor ")" )
+
+Where              ::= "WHERE" Expression
+```
+
 #### 2. クエリとSELECT構文 (Query & SELECT)
 
 ```ebnf
@@ -64,6 +105,7 @@ SelectItem         ::= ( "*" | Expression )
                        [ [ "AS" [ "MEASURE" ] ]
                          ( SimpleIdentifier | SimpleIdentifierFromStringLiteral )
                        ]
+SelectExpression   ::= "*" | Expression
 GroupingElementList::= GroupingElement { "," GroupingElement }
 GroupingElement    ::= "GROUPING" "SETS" "(" GroupingElementList ")"
                      | "ROLLUP" "(" ExpressionList ")"
@@ -138,6 +180,7 @@ TableRefPrimary    ::= CompoundTableIdentifier
 SnapshotClause     ::= "FOR" "SYSTEM_TIME" "AS" "OF" Expression
 ExtendTable        ::= [ "EXTEND" ] "(" ColumnType { "," ColumnType } ")"
 ColumnType         ::= CompoundIdentifier DataType [ "NOT" "NULL" ]
+ExtendList         ::= "(" ColumnType { "," ColumnType } ")"
 
 TablesampleClause  ::= "TABLESAMPLE" ( "SUBSTITUTE" "(" StringLiteral ")" 
                                        | ( "BERNOULLI" | "SYSTEM" ) "(" UnsignedNumericLiteral ")" [ "REPEATABLE" "(" IntLiteral ")" ] )
@@ -205,8 +248,8 @@ BinaryRowOperator  ::= "=" | "<<" | ">" | "<" | "<=" | ">=" | "<>" | "!="
                      | "^" | "&" | "EQUALS"
                      | "PRECEDES" | "SUCCEEDS"
                      | "IMMEDIATELY" "PRECEDES" | "IMMEDIATELY" "SUCCEEDS"
-                     | MultisetBinaryOperator
-MultisetBinaryOperator ::= "UNION" [ "ALL" | "DISTINCT" ]
+                     | BinaryMultisetOperator
+BinaryMultisetOperator ::= "UNION" [ "ALL" | "DISTINCT" ]
                         | "INTERSECT" [ "ALL" | "DISTINCT" ]
                         | "EXCEPT" [ "ALL" | "DISTINCT" ]
 
@@ -271,17 +314,20 @@ JsonExistsErrorBehavior ::= "TRUE" | "FALSE" | "UNKNOWN" | "ERROR"
 
 JsonValueFunctionCall  ::= "JSON_VALUE" "(" JsonApiCommonSyntax
                            [ JsonReturningClause ]
-                           { JsonValueBehavior "ON" ( "EMPTY" | "ERROR" ) } ")"
-JsonValueBehavior      ::= "ERROR" | "NULL" | ( "DEFAULT" Expression )
+                           { JsonValueEmptyOrErrorBehavior "ON" ( "EMPTY" | "ERROR" ) } ")"
+JsonValueBehavior      ::= JsonValueEmptyOrErrorBehavior
+JsonValueEmptyOrErrorBehavior ::= "ERROR" | "NULL" | ( "DEFAULT" Expression )
 
 JsonQueryFunctionCall  ::= "JSON_QUERY" "(" JsonApiCommonSyntax
                            [ JsonReturningClause ]
-                           [ JsonWrapperBehavior "WRAPPER" ]
-                           { JsonQueryBehavior "ON" ( "EMPTY" | "ERROR" ) } ")"
-JsonWrapperBehavior    ::= "WITHOUT" [ "ARRAY" ]
-                         | "WITH" "CONDITIONAL" [ "ARRAY" ]
-                         | "WITH" [ "UNCONDITIONAL" ] [ "ARRAY" ]
-JsonQueryBehavior      ::= "ERROR" | "NULL" | "EMPTY" "ARRAY" | "EMPTY" "OBJECT"
+                           [ JsonQueryWrapperBehavior "WRAPPER" ]
+                           { JsonQueryEmptyOrErrorBehavior "ON" ( "EMPTY" | "ERROR" ) } ")"
+JsonWrapperBehavior    ::= JsonQueryWrapperBehavior
+JsonQueryWrapperBehavior ::= "WITHOUT" [ "ARRAY" ]
+                           | "WITH" "CONDITIONAL" [ "ARRAY" ]
+                           | "WITH" [ "UNCONDITIONAL" ] [ "ARRAY" ]
+JsonQueryBehavior      ::= JsonQueryEmptyOrErrorBehavior
+JsonQueryEmptyOrErrorBehavior ::= "ERROR" | "NULL" | "EMPTY" "ARRAY" | "EMPTY" "OBJECT"
 
 JsonObjectFunctionCall ::= "JSON_OBJECT" "(" [ JsonNameAndValue { "," JsonNameAndValue } ] [ JsonConstructorNullClause ] ")"
 JsonObjectAggFunctionCall ::= "JSON_OBJECTAGG" "(" JsonNameAndValue [ JsonConstructorNullClause ] ")"
@@ -359,29 +405,58 @@ IntervalQualifierStart ::= ( "YEAR" | "QUARTER" | "MONTH" | "WEEK" | "DAY" | "HO
 #### 7. 補助規則 (Helper Productions)
 
 ```ebnf
+// NOTE: Some productions below are aliases (EBNF conveniences) that expand
+// inline sequences from .jj; they do not correspond to standalone JavaCC
+// productions but are semantically equivalent.
 AddSetOpQuery       ::= BinaryQueryOperator LeafQueryOrExpr
 BinaryQueryOperator ::= ( "UNION" | "INTERSECT" | "EXCEPT" ) [ "ALL" | "DISTINCT" ]
+AddSetOpQueryOrExpr ::= BinaryQueryOperator LeafQueryOrExpr
+
+Query              ::= [ WithList ] LeafQuery { AddSetOpQuery }
+WithList           ::= "WITH" [ "RECURSIVE" ] WithItem { "," WithItem }
+SqlQueryEof         ::= OrderedQueryOrExpr <EOF>
+ExprOrJoinOrOrderedQuery ::= Query OrderByLimitOpt
+                           | TableRef1 { JoinTable } { AddSetOpQuery }
 
 ParenthesizedExpression ::= "(" ( OrderedQueryOrExpr | Expression ) ")"
 ParenthesizedQueryOrCommaList ::= "(" ( OrderedQueryOrExpr | ExpressionList ) ")"
 ParenthesizedQueryOrCommaListWithDefault ::= "(" [ ExpressionOrDefault { "," ExpressionOrDefault } ] ")"
 ExpressionList      ::= Expression { "," Expression }
+ExpressionCommaList ::= Expression { "," Expression }
 ExpressionOrDefault ::= Expression | "DEFAULT"
 
 SimpleIdentifierList ::= SimpleIdentifier { "," SimpleIdentifier }
 SimpleIdentifier    ::= Identifier
-CompoundIdentifier  ::= SimpleIdentifier { "." SimpleIdentifier }
+SimpleIdentifierOrListOrEmpty ::= SimpleIdentifier | "(" SimpleIdentifierList ")" | "(" ")"
+ParenthesizedSimpleIdentifierList ::= "(" SimpleIdentifierList ")"
+CompoundIdentifier  ::= Identifier { "." Identifier } [ "." "*" ]
+CompoundTableIdentifier ::= TableIdentifierSegment { "." TableIdentifierSegment }
+TableIdentifierSegment ::= Identifier
 Identifier          ::= IDENTIFIER | HYPHENATED_IDENTIFIER | QUOTED_IDENTIFIER
                       | BACK_QUOTED_IDENTIFIER | BIG_QUERY_BACK_QUOTED_IDENTIFIER
                       | BRACKET_QUOTED_IDENTIFIER
 SimpleIdentifierFromStringLiteral ::= StringLiteral
+ParenthesizedCompoundIdentifierList ::= "(" CompoundIdentifierType { "," CompoundIdentifierType } ")"
+CompoundIdentifierType ::= CompoundIdentifier [ DataType [ NotNullOpt ] ]
+NotNullOpt          ::= "NOT" "NULL" | /* empty (nullable) */
 
 Hint               ::= "/*+" HintItem { "," HintItem } "*/"
 HintItem           ::= SimpleIdentifier [ "(" [ Literal { "," Literal } ] ")" ]
 TableHints         ::= Hint
 SqlSelectKeywords  ::= /* empty (dialect-specific) */
+ParenthesizedLiteralOptionCommaList ::= "(" [ Literal { "," Literal } ] ")"
+ParenthesizedKeyValueOptionCommaList ::= "(" KeyValueOption { "," KeyValueOption } ")"
+KeyValueOption     ::= ( SimpleIdentifier | StringLiteral ) "=" StringLiteral
+
+Where              ::= "WHERE" Expression
+GroupBy            ::= "GROUP" "BY" [ "DISTINCT" | "ALL" ] GroupingElementList
+Having             ::= "HAVING" Expression
+Window             ::= "WINDOW" WindowDeclaration { "," WindowDeclaration }
+Qualify            ::= "QUALIFY" Expression
 
 OverClause         ::= /* empty (table OVER not enabled in base parser) */
+TableOverOpt       ::= /* empty (extension point) */
+Over               ::= TableOverOpt
 ExtendedTableRef   ::= /* empty (parser extension point) */
 
 TableFunctionCall  ::= "TABLE" "(" [ "SPECIFIC" ] NamedRoutineCall ")"
@@ -389,6 +464,34 @@ ImplicitTableFunctionCallArgs ::= CompoundIdentifier "(" [ Arg0 { "," Arg } ] ")
 NamedRoutineCall   ::= CompoundIdentifier "(" [ Arg0 { "," Arg } ] ")"
 FunctionParameterList ::= "(" [ SetQuantifier ] Arg0 { "," Arg } ")"
 SetQuantifier      ::= "ALL" | "DISTINCT"
+AllOrDistinct      ::= "ALL" | "DISTINCT"
+UnquantifiedFunctionParameterList ::= FunctionParameterList
+
+AddArg0            ::= Arg0
+AddArg             ::= Arg
+AddExpression      ::= Expression
+AddExpression2b    ::= Expression2b
+AddExpressions     ::= ExpressionCommaList
+AddGroupingElement ::= GroupingElement
+AddWindowSpec      ::= WindowDeclaration
+AddWithItem        ::= WithItem
+AddSelectItem      ::= SelectItem
+AddRowConstructor  ::= RowConstructor
+AddSimpleIdentifiers ::= SimpleIdentifierList
+AddIdentifierSegment ::= Identifier
+AddTableIdentifierSegment ::= TableIdentifierSegment
+AddOrderItem       ::= OrderItem
+AddMeasureColumn   ::= MeasureColumn
+AddSubsetDefinition ::= SubsetDefinition
+AddPivotAgg        ::= PivotAgg
+AddPivotValue      ::= PivotValue
+AddUnpivotValue    ::= UnpivotValue
+AddKeyValueOption  ::= KeyValueOption
+AddOptionValue     ::= NumericLiteral | StringLiteral
+AddColumnType      ::= ColumnType
+AddCompoundIdentifierType ::= CompoundIdentifierType
+AddCompoundIdentifierTypes ::= CompoundIdentifierType { "," CompoundIdentifierType }
+AddHint            ::= HintItem
 Arg0               ::= [ SimpleIdentifier ":=" ]
                        ( Default | LambdaExpression | TableParam | PartitionedQueryOrQueryOrExpr )
 Arg                ::= [ SimpleIdentifier ":=" ]
@@ -400,13 +503,54 @@ TableParam         ::= ExplicitTable
 PartitionedQueryOrQueryOrExpr ::= OrderedQueryOrExpr
                                  [ "PARTITION" "BY" SimpleIdentifierOrList ]
                                  [ OrderByOfSetSemanticsTable ]
+PartitionedByAndOrderBy ::= [ "PARTITION" "BY" SimpleIdentifierOrList ]
+                            [ OrderByOfSetSemanticsTable ]
 OrderByOfSetSemanticsTable ::= "ORDER" "BY"
                                ( "(" OrderItem { "," OrderItem } ")"
                                | OrderItem
                                )
 // NOTE: OrderByOfSetSemanticsTable is a restricted ORDER BY used for set-semantics tables;
 // it allows a parenthesized list or a single OrderItem, unlike the general OrderBy rule.
-NamedFunctionCall  ::= CompoundIdentifier FunctionParameterList
+NamedFunctionCall  ::= ( StringAggFunctionCall | PercentileFunctionCall | NamedCall )
+                       [ nullTreatment ] [ withinDistinct ] [ withinGroup ]
+                       [ FilterClause ] [ OverWindowClause ]
+NamedCall          ::= [ "SPECIFIC" ] FunctionName
+                       ( "(" "*" ")" | "(" ")" | FunctionParameterList )
+FunctionName       ::= CompoundIdentifier | ReservedFunctionName
+ReservedFunctionName ::= NonReservedJdbcFunctionName | /* reserved keywords usable as function names */
+NonReservedJdbcFunctionName ::= "SUBSTRING"
+NonReservedKeyWord  ::= /* non-reserved keyword set (lexer-defined) */
+NonReservedKeyWord0of3 ::= NonReservedKeyWord
+NonReservedKeyWord1of3 ::= NonReservedKeyWord
+NonReservedKeyWord2of3 ::= NonReservedKeyWord
+FilterClause       ::= "FILTER" "(" "WHERE" Expression ")"
+OverWindowClause   ::= "OVER" ( SimpleIdentifier | WindowSpecification )
+
+StringAggFunctionCall ::= ( "ARRAY_AGG" | "ARRAY_CONCAT_AGG" | "GROUP_CONCAT" | "STRING_AGG" )
+                          "(" [ AllOrDistinct ] Expression { "," Expression }
+                          [ NullTreatment ] [ OrderBy ] [ "SEPARATOR" StringLiteral ] ")"
+
+PercentileFunctionCall ::= ( "PERCENTILE_CONT" | "PERCENTILE_DISC" )
+                          "(" Expression
+                          [ "," NumericLiteral [ NullTreatment ] ] ")"
+
+GroupByWindowingCall ::= ( "TUMBLE" | "HOP" | "SESSION" ) FunctionParameterList
+
+MatchRecognizeFunctionCall ::= "CLASSIFIER" "(" ")" | "MATCH_NUMBER" "(" ")"
+                             | MatchRecognizeNavigationLogical
+                             | MatchRecognizeNavigationPhysical
+                             | MatchRecognizeCallWithModifier
+MatchRecognize      ::= MatchRecognizeClause
+MatchRecognizeCallWithModifier ::= ( "RUNNING" | "FINAL" ) NamedFunctionCall
+MatchRecognizeNavigationLogical ::= [ "RUNNING" | "FINAL" ] ( "FIRST" | "LAST" )
+                                   "(" Expression [ "," NumericLiteral ] ")"
+MatchRecognizeNavigationPhysical ::= ( "PREV" | "NEXT" )
+                                     "(" Expression [ "," NumericLiteral ] ")"
+
+withinDistinct     ::= "WITHIN" "DISTINCT" "(" ExpressionList ")"
+withinGroup        ::= "WITHIN" "GROUP" "(" OrderBy ")"
+NullTreatment      ::= ( "IGNORE" | "RESPECT" ) "NULLS"
+nullTreatment      ::= NullTreatment
 JdbcFunctionCall   ::= "{fn" CompoundIdentifier "(" [ Expression { "," Expression } ] ")" "}"
 
 DynamicParam       ::= "?" | ":" UnsignedIntLiteral
@@ -440,5 +584,124 @@ SkipTo             ::= "PAST" "LAST" "ROW"
                      | "TO" "NEXT" "ROW"
                      | "TO" "FIRST" SimpleIdentifier
                      | "TO" [ "LAST" ] SimpleIdentifier
+
+StringLiteral      ::= BinaryStringLiteral | CharStringLiteral | CStyleEscapedString
+BinaryStringLiteral ::= BINARY_STRING_LITERAL { QUOTED_STRING }
+CharStringLiteral  ::= ( PREFIXED_STRING_LITERAL | QUOTED_STRING | UNICODE_STRING_LITERAL )
+                      { QUOTED_STRING } [ "UESCAPE" QUOTED_STRING ]
+                    | BIG_QUERY_DOUBLE_QUOTED_STRING
+                    | BIG_QUERY_QUOTED_STRING
+CStyleEscapedString ::= C_STYLE_ESCAPED_STRING_LITERAL
+SimpleStringLiteral ::= QUOTED_STRING | BIG_QUERY_QUOTED_STRING | BIG_QUERY_DOUBLE_QUOTED_STRING
+
+UnsignedIntLiteral ::= UNSIGNED_INTEGER_LITERAL
+IntLiteral         ::= [ "+" | "-" ] UNSIGNED_INTEGER_LITERAL
+UnsignedNumericLiteralOrParam ::= UnsignedNumericLiteral | DynamicParam
+
+TimeUnitOrName     ::= TimeUnit | SimpleIdentifier
+TimeUnit           ::= "NANOSECOND" | "MICROSECOND" | "MILLISECOND" | "SECOND"
+                     | "MINUTE" | "HOUR" | "DAY"
+                     | "DAYOFWEEK" | "DAYOFYEAR" | "DOW" | "DOY"
+                     | "ISODOW" | "ISOYEAR"
+                     | "WEEK" [ "(" weekdayName ")" ]
+                     | "MONTH" | "QUARTER" | "YEAR"
+                     | "EPOCH" | "DECADE" | "CENTURY" | "MILLENNIUM"
+weekdayName        ::= "SUNDAY" | "MONDAY" | "TUESDAY" | "WEDNESDAY"
+                     | "THURSDAY" | "FRIDAY" | "SATURDAY"
+Year               ::= "YEAR" | "YEARS"
+Quarter            ::= "QUARTER" | "QUARTERS"
+Month              ::= "MONTH" | "MONTHS"
+Week               ::= "WEEK" | "WEEKS"
+Day                ::= "DAY" | "DAYS"
+Hour               ::= "HOUR" | "HOURS"
+Minute             ::= "MINUTE" | "MINUTES"
+Second             ::= "SECOND" | "SECONDS"
+IntervalWithoutQualifier ::= "INTERVAL" /* default SECOND */
+
+JsonRepresentation ::= "JSON" [ "ENCODING" ( "UTF8" | "UTF16" | "UTF32" ) ]
+JsonInputClause    ::= "FORMAT" JsonRepresentation
+JsonPathSpec       ::= StringLiteral
+JsonName           ::= Expression
+JsonNameAndValue   ::= [ "KEY" ] JsonName ( "VALUE" | "," | ":" ) Expression
+JsonConstructorNullClause ::= "NULL" "ON" "NULL" | "ABSENT" "ON" "NULL"
+JsonOutputClause   ::= JsonReturningClause [ "FORMAT" JsonRepresentation ]
+
+TableRef1          ::= TableRef3
+TableRef2          ::= TableRef3
+TableRef3          ::= TableRefPrimary
+                       [ PivotClause ] [ UnpivotClause ]
+                       [ [ "AS" ] SimpleIdentifier [ "(" SimpleIdentifierList ")" ] ]
+                       [ TablesampleClause ]
+Tablesample        ::= TablesampleClause
+Pivot              ::= PivotClause
+Unpivot            ::= UnpivotClause
+Snapshot           ::= SnapshotClause
+
+LambdaExpression   ::= SimpleIdentifierOrListOrEmpty "->" Expression
+
+PeriodConstructor  ::= "PERIOD" "(" Expression "," Expression ")"
+ArrayLiteral       ::= "{" ( Literal { "," Literal }
+                           | ArrayLiteral { "," ArrayLiteral }
+                           | /* empty */
+                           ) "}"
+
+PrecisionOpt       ::= "(" UnsignedIntLiteral ")" | /* empty */
+NullableOptDefaultTrue  ::= "NULL" | "NOT" "NULL" | /* empty (default true) */
+NullableOptDefaultFalse ::= "NULL" | "NOT" "NULL" | /* empty (default false) */
+
+JsonArrayAggOrderByClause ::= OrderBy
+
+ContainsSubstrFunctionCall ::= "CONTAINS_SUBSTR" "(" Expression "," Expression
+                               [ "," "JSON_SCOPE" ":=" Expression ] ")"
+
+DateDiffFunctionCall      ::= "DATE_DIFF" "(" Expression "," Expression "," TimeUnitOrName ")"
+TimestampAddFunctionCall  ::= "TIMESTAMPADD" "(" TimeUnitOrName "," Expression "," Expression ")"
+TimestampDiffFunctionCall ::= "TIMESTAMPDIFF" "(" TimeUnitOrName "," Expression "," Expression ")"
+TimestampDiff3FunctionCall ::= "TIMESTAMP_DIFF" "(" Expression "," Expression "," TimeUnitOrName ")"
+DatetimeDiffFunctionCall  ::= "DATETIME_DIFF" "(" Expression "," Expression "," TimeUnitOrName ")"
+DateTruncFunctionCall     ::= "DATE_TRUNC" "(" Expression "," TimeUnitOrName ")"
+DatetimeTruncFunctionCall ::= "DATETIME_TRUNC" "(" Expression "," TimeUnitOrName ")"
+TimestampTruncFunctionCall ::= "TIMESTAMP_TRUNC" "(" Expression "," TimeUnitOrName ")"
+TimeDiffFunctionCall      ::= "TIME_DIFF" "(" Expression "," Expression "," TimeUnitOrName ")"
+TimeTruncFunctionCall     ::= "TIME_TRUNC" "(" Expression "," TimeUnitOrName ")"
+
+DateTimeConstructorCall   ::= ( "DATE" | "TIME" | "DATETIME" | "TIMESTAMP" )
+                              FunctionParameterList
+
+FloorCeilOptions          ::= StandardFloorCeilOptions
+StandardFloorCeilOptions  ::= "(" Expression [ "TO" TimeUnitOrName ] ")"
+                             [ "OVER" ( SimpleIdentifier | WindowSpecification ) ]
+
+JdbcOdbcDataTypeName ::= "SQL_CHAR" | "CHAR" | "SQL_VARCHAR" | "VARCHAR"
+                       | "SQL_DATE" | "DATE" | "SQL_TIME" | "TIME"
+                       | "SQL_TIMESTAMP" | "TIMESTAMP"
+                       | "SQL_DECIMAL" | "DECIMAL" | "SQL_NUMERIC" | "NUMERIC"
+                       | "SQL_BOOLEAN" | "BOOLEAN"
+                       | "SQL_INTEGER" | "INTEGER" | "SQL_BINARY" | "BINARY"
+                       | "SQL_VARBINARY" | "VARBINARY" | "SQL_TINYINT" | "TINYINT"
+                       | "SQL_SMALLINT" | "SMALLINT" | "SQL_BIGINT" | "BIGINT"
+                       | "SQL_REAL" | "REAL" | "SQL_DOUBLE" | "DOUBLE"
+                       | "SQL_FLOAT" | "FLOAT"
+                       | "SQL_INTERVAL_YEAR" | "SQL_INTERVAL_YEAR_TO_MONTH"
+                       | "SQL_INTERVAL_MONTH" | "SQL_INTERVAL_DAY"
+                       | "SQL_INTERVAL_DAY_TO_HOUR" | "SQL_INTERVAL_DAY_TO_MINUTE"
+                       | "SQL_INTERVAL_DAY_TO_SECOND" | "SQL_INTERVAL_HOUR"
+                       | "SQL_INTERVAL_HOUR_TO_MINUTE" | "SQL_INTERVAL_HOUR_TO_SECOND"
+                       | "SQL_INTERVAL_MINUTE" | "SQL_INTERVAL_MINUTE_TO_SECOND"
+                       | "SQL_INTERVAL_SECOND"
+JdbcOdbcDataType ::= JdbcOdbcDataTypeName
+
+CollectionsTypeName ::= DataType ( "MULTISET" | "ARRAY" )
+CollateClause       ::= "COLLATE" SimpleIdentifier
+UnusedExtension     ::= /* empty (extension point) */
+
+MeasureColumnCommaList ::= MeasureColumn { "," MeasureColumn }
+SubsetDefinitionCommaList ::= SubsetDefinition { "," SubsetDefinition }
+PatternDefinitionCommaList ::= PatternDefinition { "," PatternDefinition }
+
+Natural            ::= "NATURAL" | /* empty */
+Scope              ::= "SYSTEM" | "SESSION"
+comp               ::= "<" | "<=" | ">" | ">=" | "=" | "<>" | "!="
+periodOperator     ::= /* TODO: period operator (overlaps) */
 
 ```
