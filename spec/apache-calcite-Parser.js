@@ -771,6 +771,9 @@ class CalciteParser {
       if (this.isKeyword("WINDOW")) window = this.Window();
       if (this.isKeyword("QUALIFY")) qualify = this.Qualify();
     }
+    if (having && !groupBy) {
+      throw new Error("HAVING requires GROUP BY");
+    }
     return {
       type: "SqlSelect",
       hints,
@@ -840,6 +843,9 @@ class CalciteParser {
       }
       const exclusion = this.WindowExclusion();
       frame.exclusion = exclusion;
+    }
+    if (frame && !orderBy) {
+      throw new Error("Window frame requires ORDER BY");
     }
     let partial = null;
     if (this.acceptKeyword("ALLOW") || this.acceptKeyword("DISALLOW")) {
@@ -1011,6 +1017,9 @@ class CalciteParser {
     }
     if (!natural && joinType !== "CROSS JOIN" && !condition) {
       throw new Error("JOIN requires ON or USING");
+    }
+    if (natural && condition) {
+      throw new Error("NATURAL JOIN cannot use ON or USING");
     }
     return { type: "JoinTable", natural, joinType, table, condition };
   }
