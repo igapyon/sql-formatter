@@ -2197,7 +2197,8 @@ class CalciteParser {
   }
 
   SimpleIdentifierFromStringLiteral() {
-    return this.notImplemented("SimpleIdentifierFromStringLiteral");
+    const lit = this.StringLiteral();
+    return { type: "SimpleIdentifierFromStringLiteral", value: lit.value };
   }
 
   ParenthesizedCompoundIdentifierList() {
@@ -2397,71 +2398,170 @@ class CalciteParser {
   }
 
   AddExpressions() {
-    return this.notImplemented("AddExpressions");
+    return this.ExpressionCommaList();
   }
 
   AddGroupingElement() {
-    return this.notImplemented("AddGroupingElement");
+    if (this.acceptKeyword("GROUPING")) {
+      this.expectKeyword("SETS");
+      this.expectSymbol("(");
+      const list = this.GroupingElementList();
+      this.expectSymbol(")");
+      return { type: "AddGroupingElement", kind: "GROUPING SETS", list };
+    }
+    if (this.acceptKeyword("ROLLUP")) {
+      this.expectSymbol("(");
+      const list = this.ExpressionCommaList();
+      this.expectSymbol(")");
+      return { type: "AddGroupingElement", kind: "ROLLUP", list };
+    }
+    if (this.acceptKeyword("CUBE")) {
+      this.expectSymbol("(");
+      const list = this.ExpressionCommaList();
+      this.expectSymbol(")");
+      return { type: "AddGroupingElement", kind: "CUBE", list };
+    }
+    if (this.acceptSymbol("(")) {
+      this.expectSymbol(")");
+      return { type: "AddGroupingElement", kind: "EMPTY" };
+    }
+    const expr = this.Expression();
+    return { type: "AddGroupingElement", kind: "EXPR", expr };
   }
 
   AddWindowSpec() {
-    return this.notImplemented("AddWindowSpec");
+    const name = this.SimpleIdentifier();
+    this.expectKeyword("AS");
+    const spec = this.WindowSpecification();
+    return { type: "AddWindowSpec", name, spec };
   }
 
   AddWithItem() {
-    return this.notImplemented("AddWithItem");
+    const name = this.SimpleIdentifier();
+    let columns = null;
+    if (this.isSymbol("(")) {
+      columns = this.ParenthesizedSimpleIdentifierList();
+    }
+    this.expectKeyword("AS");
+    const query = this.ParenthesizedExpression();
+    return { type: "AddWithItem", name, columns, query };
   }
 
   AddSelectItem() {
-    return this.notImplemented("AddSelectItem");
+    const expr = this.SelectExpression();
+    let alias = null;
+    let measure = false;
+    if (this.acceptKeyword("AS")) {
+      if (this.acceptKeyword("MEASURE")) measure = true;
+      if (this.peek().type === "IDENT") {
+        alias = this.SimpleIdentifier();
+      } else if (this.peek().type === "STRING") {
+        alias = this.SimpleIdentifierFromStringLiteral();
+      }
+    } else if (this.peek().type === "IDENT" || this.peek().type === "STRING") {
+      if (this.peek().type === "IDENT") alias = this.SimpleIdentifier();
+      else alias = this.SimpleIdentifierFromStringLiteral();
+    }
+    return { type: "AddSelectItem", expr, alias, measure };
   }
 
   AddRowConstructor() {
-    return this.notImplemented("AddRowConstructor");
+    return this.RowConstructor();
   }
 
   AddSimpleIdentifiers() {
-    return this.notImplemented("AddSimpleIdentifiers");
+    const items = [this.SimpleIdentifier()];
+    while (this.acceptSymbol(",")) {
+      items.push(this.SimpleIdentifier());
+    }
+    return { type: "AddSimpleIdentifiers", items };
   }
 
   AddIdentifierSegment() {
-    return this.notImplemented("AddIdentifierSegment");
+    return this.Identifier();
   }
 
   AddTableIdentifierSegment() {
-    return this.notImplemented("AddTableIdentifierSegment");
+    return this.Identifier();
   }
 
   AddOrderItem() {
-    return this.notImplemented("AddOrderItem");
+    const expr = this.Expression();
+    let alias = null;
+    if (this.acceptKeyword("AS")) {
+      if (this.peek().type === "IDENT") alias = this.SimpleIdentifier();
+      else if (this.peek().type === "STRING") alias = this.SimpleIdentifierFromStringLiteral();
+    }
+    let direction = null;
+    if (this.acceptKeyword("ASC")) direction = "ASC";
+    else if (this.acceptKeyword("DESC")) direction = "DESC";
+    let nulls = null;
+    if (this.acceptKeyword("NULLS")) {
+      if (this.acceptKeyword("FIRST")) nulls = "FIRST";
+      else if (this.acceptKeyword("LAST")) nulls = "LAST";
+    }
+    return { type: "AddOrderItem", expr, alias, direction, nulls };
   }
 
   AddMeasureColumn() {
-    return this.notImplemented("AddMeasureColumn");
+    const expr = this.Expression();
+    this.expectKeyword("AS");
+    const name = this.SimpleIdentifier();
+    return { type: "AddMeasureColumn", expr, name };
   }
 
   AddSubsetDefinition() {
-    return this.notImplemented("AddSubsetDefinition");
+    const name = this.SimpleIdentifier();
+    this.expectSymbol("=");
+    this.expectSymbol("(");
+    const list = this.ExpressionCommaList();
+    this.expectSymbol(")");
+    return { type: "AddSubsetDefinition", name, list };
   }
 
   AddPivotAgg() {
-    return this.notImplemented("AddPivotAgg");
+    const call = this.NamedFunctionCall();
+    let alias = null;
+    if (this.acceptKeyword("AS")) {
+      alias = this.SimpleIdentifier();
+    } else if (this.peek().type === "IDENT") {
+      alias = this.SimpleIdentifier();
+    }
+    return { type: "AddPivotAgg", call, alias };
   }
 
   AddPivotValue() {
-    return this.notImplemented("AddPivotValue");
+    const row = this.RowConstructor();
+    let alias = null;
+    if (this.acceptKeyword("AS")) {
+      alias = this.SimpleIdentifier();
+    } else if (this.peek().type === "IDENT") {
+      alias = this.SimpleIdentifier();
+    }
+    return { type: "AddPivotValue", row, alias };
   }
 
   AddUnpivotValue() {
-    return this.notImplemented("AddUnpivotValue");
+    const list = this.SimpleIdentifierOrList();
+    let row = null;
+    if (this.acceptKeyword("AS")) {
+      row = this.RowConstructor();
+    }
+    return { type: "AddUnpivotValue", list, row };
   }
 
   AddKeyValueOption() {
-    return this.notImplemented("AddKeyValueOption");
+    let key;
+    if (this.peek().type === "IDENT") key = this.SimpleIdentifier();
+    else key = this.StringLiteral();
+    this.expectSymbol("=");
+    const value = this.StringLiteral();
+    return { type: "AddKeyValueOption", key, value };
   }
 
   AddOptionValue() {
-    return this.notImplemented("AddOptionValue");
+    if (this.peek().type === "NUMBER") return this.NumericLiteral();
+    return this.StringLiteral();
   }
 
   AddColumnType() {
