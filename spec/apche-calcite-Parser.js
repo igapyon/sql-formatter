@@ -2218,13 +2218,51 @@ class CalciteParser {
   }
 
   IntervalQualifier() {
-    return this.IntervalQualifierStart();
+    const base = this.IntervalQualifierStart();
+    if (base.unit === "SECOND") {
+      return base;
+    }
+    let precision = null;
+    if (this.acceptSymbol("(")) {
+      precision = this.UnsignedIntLiteral();
+      this.expectSymbol(")");
+      base.precision = precision;
+    }
+    let to = null;
+    if (this.acceptKeyword("TO")) {
+      if (this.acceptKeyword("MONTH")) to = "MONTH";
+      else if (this.acceptKeyword("HOUR")) to = "HOUR";
+      else if (this.acceptKeyword("MINUTE")) to = "MINUTE";
+      else if (this.acceptKeyword("SECOND")) to = "SECOND";
+      else return this.notImplemented("IntervalQualifier");
+      base.to = to;
+    }
+    return base;
   }
 
   IntervalQualifierStart() {
-    const units = ["YEAR", "QUARTER", "MONTH", "WEEK", "DAY", "HOUR", "MINUTE", "SECOND"];
+    const units = ["YEAR", "QUARTER", "MONTH", "WEEK", "DAY", "HOUR", "MINUTE"];
     for (const u of units) {
-      if (this.acceptKeyword(u)) return { type: "IntervalQualifier", unit: u };
+      if (this.acceptKeyword(u)) {
+        let precision = null;
+        if (this.acceptSymbol("(")) {
+          precision = this.UnsignedIntLiteral();
+          this.expectSymbol(")");
+        }
+        return { type: "IntervalQualifier", unit: u, precision };
+      }
+    }
+    if (this.acceptKeyword("SECOND")) {
+      let precision = null;
+      let scale = null;
+      if (this.acceptSymbol("(")) {
+        precision = this.UnsignedIntLiteral();
+        if (this.acceptSymbol(",")) {
+          scale = this.UnsignedIntLiteral();
+        }
+        this.expectSymbol(")");
+      }
+      return { type: "IntervalQualifier", unit: "SECOND", precision, scale };
     }
     return this.notImplemented("IntervalQualifierStart");
   }
@@ -2963,27 +3001,37 @@ class CalciteParser {
   }
 
   ReservedFunctionName() {
+    const name = this.NonReservedJdbcFunctionName();
+    if (name) return name;
     return this.notImplemented("ReservedFunctionName");
   }
 
   NonReservedJdbcFunctionName() {
-    return this.notImplemented("NonReservedJdbcFunctionName");
+    if (this.acceptKeyword("SUBSTRING")) {
+      return { type: "NonReservedJdbcFunctionName", value: "SUBSTRING" };
+    }
+    return null;
   }
 
   NonReservedKeyWord() {
+    // Lexer-defined; accept any identifier as a placeholder
+    if (this.peek().type === "IDENT") {
+      const id = this.SimpleIdentifier();
+      return { type: "NonReservedKeyWord", value: id };
+    }
     return this.notImplemented("NonReservedKeyWord");
   }
 
   NonReservedKeyWord0of3() {
-    return this.notImplemented("NonReservedKeyWord0of3");
+    return this.NonReservedKeyWord();
   }
 
   NonReservedKeyWord1of3() {
-    return this.notImplemented("NonReservedKeyWord1of3");
+    return this.NonReservedKeyWord();
   }
 
   NonReservedKeyWord2of3() {
-    return this.notImplemented("NonReservedKeyWord2of3");
+    return this.NonReservedKeyWord();
   }
 
   StringAggFunctionCall() {
@@ -3385,39 +3433,56 @@ class CalciteParser {
   }
 
   Year() {
+    if (this.acceptKeyword("YEAR")) return { type: "Year", value: "YEAR" };
+    if (this.acceptKeyword("YEARS")) return { type: "Year", value: "YEARS" };
     return this.notImplemented("Year");
   }
 
   Quarter() {
+    if (this.acceptKeyword("QUARTER")) return { type: "Quarter", value: "QUARTER" };
+    if (this.acceptKeyword("QUARTERS")) return { type: "Quarter", value: "QUARTERS" };
     return this.notImplemented("Quarter");
   }
 
   Month() {
+    if (this.acceptKeyword("MONTH")) return { type: "Month", value: "MONTH" };
+    if (this.acceptKeyword("MONTHS")) return { type: "Month", value: "MONTHS" };
     return this.notImplemented("Month");
   }
 
   Week() {
+    if (this.acceptKeyword("WEEK")) return { type: "Week", value: "WEEK" };
+    if (this.acceptKeyword("WEEKS")) return { type: "Week", value: "WEEKS" };
     return this.notImplemented("Week");
   }
 
   Day() {
+    if (this.acceptKeyword("DAY")) return { type: "Day", value: "DAY" };
+    if (this.acceptKeyword("DAYS")) return { type: "Day", value: "DAYS" };
     return this.notImplemented("Day");
   }
 
   Hour() {
+    if (this.acceptKeyword("HOUR")) return { type: "Hour", value: "HOUR" };
+    if (this.acceptKeyword("HOURS")) return { type: "Hour", value: "HOURS" };
     return this.notImplemented("Hour");
   }
 
   Minute() {
+    if (this.acceptKeyword("MINUTE")) return { type: "Minute", value: "MINUTE" };
+    if (this.acceptKeyword("MINUTES")) return { type: "Minute", value: "MINUTES" };
     return this.notImplemented("Minute");
   }
 
   Second() {
+    if (this.acceptKeyword("SECOND")) return { type: "Second", value: "SECOND" };
+    if (this.acceptKeyword("SECONDS")) return { type: "Second", value: "SECONDS" };
     return this.notImplemented("Second");
   }
 
   IntervalWithoutQualifier() {
-    return this.notImplemented("IntervalWithoutQualifier");
+    this.expectKeyword("INTERVAL");
+    return { type: "IntervalWithoutQualifier" };
   }
 
   JsonRepresentation() {
@@ -3711,11 +3776,18 @@ class CalciteParser {
   }
 
   CollectionsTypeName() {
-    return this.notImplemented("CollectionsTypeName");
+    const dataType = this.DataType();
+    let kind;
+    if (this.acceptKeyword("MULTISET")) kind = "MULTISET";
+    else if (this.acceptKeyword("ARRAY")) kind = "ARRAY";
+    else return this.notImplemented("CollectionsTypeName");
+    return { type: "CollectionsTypeName", dataType, kind };
   }
 
   CollateClause() {
-    return this.notImplemented("CollateClause");
+    this.expectKeyword("COLLATE");
+    const name = this.SimpleIdentifier();
+    return { type: "CollateClause", name };
   }
 
   UnusedExtension() {
