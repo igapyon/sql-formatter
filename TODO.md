@@ -38,11 +38,8 @@
 - 失敗時は notImplemented を残して段階的に埋める。
 
 ## 未実装一覧（notImplemented が残るもの）
-SqlInsert / LeafQuery / TableConstructor /
-WindowRange / FetchClause / JoinType / Tablesample /
-BinaryRowOperator / PostfixRowOperator / AtomicRowExpression / BuiltinFunctionCall /
+BinaryRowOperator / BuiltinFunctionCall /
 JsonExistsErrorBehavior / JsonQueryWrapperBehavior /
-Literal / NonIntervalLiteral / UnsignedNumericLiteral / SpecialLiteral / DateTimeLiteral / IntervalQualifier / IntervalQualifierStart /
 BinaryQueryOperator /
 SimpleIdentifierOrListOrEmpty /
 AddExpression / AddCompoundIdentifierTypes /
