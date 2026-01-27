@@ -1486,14 +1486,22 @@ class CalciteParser {
         this.isKeyword("JSON_ARRAY") || this.isKeyword("JSON_ARRAYAGG")) {
       return this.BuiltinFunctionCall();
     }
+    if (this.isKeyword("DATE") || this.isKeyword("DATETIME") || this.isKeyword("TIME") ||
+        this.isKeyword("TIMESTAMP") || this.isKeyword("UUID")) {
+      if (this.peekN(1).type === "STRING") {
+        return this.DateTimeLiteral();
+      }
+    }
     if (t.type === "IDENT" || this.isKeyword("SPECIFIC")) {
       const save = this.pos;
       const fn = this.NamedFunctionCall();
       if (fn) return fn;
       this.pos = save;
     }
-    if (t.type === "STRING" || t.type === "NUMBER") {
-      return this.Literal();
+    if (t.type === "STRING" || t.type === "NUMBER" ||
+        this.isKeyword("TRUE") || this.isKeyword("FALSE") || this.isKeyword("UNKNOWN") || this.isKeyword("NULL") ||
+        this.isKeyword("DECIMAL") || this.isKeyword("INTERVAL")) {
+      return this.LiteralOrIntervalExpression();
     }
     if (this.isKeyword("MULTISET")) {
       return this.MultisetConstructor();
