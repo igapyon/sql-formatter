@@ -103,6 +103,23 @@ class CalciteParser {
     }
     return this.next();
   }
+  isBinaryOperator() {
+    const t = this.peek();
+    if (t.type === "SYMBOL") {
+      return ["=", "<", ">", "<=", ">=", "<>", "!=", "+", "-", "*", "/", "%", "||"].includes(t.value);
+    }
+    if (t.type === "IDENT") {
+      const v = String(t.value).toUpperCase();
+      return v === "AND" || v === "OR";
+    }
+    return false;
+  }
+  readBinaryOperator() {
+    const t = this.peek();
+    if (t.type === "SYMBOL") return this.next().value;
+    if (t.type === "IDENT") return String(this.next().value).toUpperCase();
+    throw new Error(`Expected binary operator but got ${t.type}:${t.value}`);
+  }
   expect(type) {
     const t = this.peek();
     if (t.type !== type) {
@@ -466,11 +483,17 @@ class CalciteParser {
   }
 
   Expression() {
-    return this.notImplemented("Expression");
+    return this.Expression2();
   }
 
   Expression2() {
-    return this.notImplemented("Expression2");
+    let left = this.AddExpression2b();
+    while (this.isBinaryOperator()) {
+      const op = this.readBinaryOperator();
+      const right = this.AddExpression2b();
+      left = { type: "BinaryExpression", operator: op, left, right };
+    }
+    return left;
   }
 
   RowExpressionExtension() {
@@ -486,7 +509,12 @@ class CalciteParser {
   }
 
   PrefixRowOperator() {
-    return this.notImplemented("PrefixRowOperator");
+    if (this.acceptSymbol("+")) return "+";
+    if (this.acceptSymbol("-")) return "-";
+    if (this.acceptKeyword("NOT")) return "NOT";
+    if (this.acceptKeyword("EXISTS")) return "EXISTS";
+    if (this.acceptKeyword("UNIQUE")) return "UNIQUE";
+    return null;
   }
 
   PostfixRowOperator() {
@@ -494,10 +522,24 @@ class CalciteParser {
   }
 
   Expression3() {
-    return this.notImplemented("Expression3");
+    if (this.isSymbol("(")) {
+      return this.ParenthesizedExpression();
+    }
+    return this.AtomicRowExpression();
   }
 
   AtomicRowExpression() {
+    const t = this.peek();
+    if (t.type === "STRING" || t.type === "NUMBER") {
+      return this.Literal();
+    }
+    if (this.isSymbol("*")) {
+      this.next();
+      return { type: "Star" };
+    }
+    if (t.type === "IDENT") {
+      return this.CompoundIdentifier();
+    }
     return this.notImplemented("AtomicRowExpression");
   }
 
@@ -618,6 +660,9 @@ class CalciteParser {
   }
 
   Literal() {
+    const t = this.peek();
+    if (t.type === "STRING") return this.StringLiteral();
+    if (t.type === "NUMBER") return this.NumericLiteral();
     return this.notImplemented("Literal");
   }
 
@@ -634,7 +679,12 @@ class CalciteParser {
   }
 
   NumericLiteral() {
-    return this.notImplemented("NumericLiteral");
+    const t = this.peek();
+    if (t.type !== "NUMBER") {
+      throw new Error(`Expected number but got ${t.type}:${t.value}`);
+    }
+    this.next();
+    return { type: "NumericLiteral", value: t.value };
   }
 
   UnsignedNumericLiteral() {
@@ -686,7 +736,15 @@ class CalciteParser {
   }
 
   ParenthesizedExpression() {
-    return this.notImplemented("ParenthesizedExpression");
+    this.expectSymbol("(");
+    let node;
+    if (this.isKeyword("SELECT") || this.isKeyword("VALUES") || this.isKeyword("VALUE") || this.isKeyword("TABLE") || this.isKeyword("WITH")) {
+      node = this.OrderedQueryOrExpr();
+    } else {
+      node = this.Expression();
+    }
+    this.expectSymbol(")");
+    return { type: "ParenthesizedExpression", node };
   }
 
   ParenthesizedQueryOrCommaList() {
@@ -698,11 +756,15 @@ class CalciteParser {
   }
 
   ExpressionCommaList() {
-    return this.notImplemented("ExpressionCommaList");
+    const expressions = [this.Expression()];
+    while (this.acceptSymbol(",")) {
+      expressions.push(this.Expression());
+    }
+    return { type: "ExpressionCommaList", expressions };
   }
 
   SimpleIdentifier() {
-    return this.notImplemented("SimpleIdentifier");
+    return this.Identifier();
   }
 
   SimpleIdentifierOrListOrEmpty() {
@@ -714,7 +776,15 @@ class CalciteParser {
   }
 
   CompoundIdentifier() {
-    return this.notImplemented("CompoundIdentifier");
+    const parts = [this.Identifier()];
+    while (this.acceptSymbol(".")) {
+      if (this.acceptSymbol("*")) {
+        parts.push({ type: "Star" });
+        break;
+      }
+      parts.push(this.Identifier());
+    }
+    return { type: "CompoundIdentifier", parts };
   }
 
   CompoundTableIdentifier() {
@@ -722,7 +792,12 @@ class CalciteParser {
   }
 
   Identifier() {
-    return this.notImplemented("Identifier");
+    const t = this.peek();
+    if (t.type !== "IDENT") {
+      throw new Error(`Expected identifier but got ${t.type}:${t.value}`);
+    }
+    this.next();
+    return { type: "Identifier", value: t.value };
   }
 
   SimpleIdentifierFromStringLiteral() {
@@ -818,7 +893,19 @@ class CalciteParser {
   }
 
   AddExpression2b() {
-    return this.notImplemented("AddExpression2b");
+    const prefixes = [];
+    let op = this.PrefixRowOperator();
+    while (op) {
+      prefixes.push(op);
+      op = this.PrefixRowOperator();
+    }
+    const base = this.Expression3();
+    const extensions = [];
+    while (this.acceptSymbol(".")) {
+      const id = this.SimpleIdentifier();
+      extensions.push(id);
+    }
+    return { type: "Expression2b", prefixes, base, extensions };
   }
 
   AddExpressions() {
@@ -1054,7 +1141,12 @@ class CalciteParser {
   }
 
   StringLiteral() {
-    return this.notImplemented("StringLiteral");
+    const t = this.peek();
+    if (t.type !== "STRING") {
+      throw new Error(`Expected string but got ${t.type}:${t.value}`);
+    }
+    this.next();
+    return { type: "StringLiteral", value: t.value };
   }
 
   SimpleStringLiteral() {
