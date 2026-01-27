@@ -599,15 +599,47 @@ class CalciteParser {
   }
 
   ExplicitTable() {
-    return this.notImplemented("ExplicitTable");
+    this.expectKeyword("TABLE");
+    const name = this.CompoundIdentifier();
+    return { type: "ExplicitTable", name };
   }
 
   TableConstructor() {
+    if (this.acceptKeyword("VALUES")) {
+      const rows = [this.RowConstructor()];
+      while (this.acceptSymbol(",")) {
+        rows.push(this.RowConstructor());
+      }
+      return { type: "TableConstructor", kind: "VALUES", rows };
+    }
+    if (this.acceptKeyword("VALUE")) {
+      const rows = [this.RowConstructor()];
+      while (this.acceptSymbol(",")) {
+        rows.push(this.RowConstructor());
+      }
+      return { type: "TableConstructor", kind: "VALUE", rows };
+    }
     return this.notImplemented("TableConstructor");
   }
 
   RowConstructor() {
-    return this.notImplemented("RowConstructor");
+    if (this.isSymbol("(") && this.isKeywordAt("ROW", 1)) {
+      this.expectSymbol("(");
+      this.expectKeyword("ROW");
+      const list = this.ParenthesizedQueryOrCommaListWithDefault();
+      this.expectSymbol(")");
+      return { type: "RowConstructor", kind: "PAREN_ROW", list };
+    }
+    if (this.acceptKeyword("ROW")) {
+      const list = this.ParenthesizedQueryOrCommaListWithDefault();
+      return { type: "RowConstructor", kind: "ROW", list };
+    }
+    if (this.isSymbol("(")) {
+      const list = this.ParenthesizedQueryOrCommaListWithDefault();
+      return { type: "RowConstructor", kind: "PAREN", list };
+    }
+    const expr = this.Expression();
+    return { type: "RowConstructor", kind: "EXPR", expr };
   }
 
   WithList() {
@@ -854,11 +886,11 @@ class CalciteParser {
   }
 
   TableRef1() {
-    return this.notImplemented("TableRef1");
+    return this.TableRef3();
   }
 
   TableRef2() {
-    return this.notImplemented("TableRef2");
+    return this.TableRef3();
   }
 
   TableRef3() {
@@ -1960,27 +1992,69 @@ class CalciteParser {
   }
 
   AddSetOpQuery() {
-    return this.notImplemented("AddSetOpQuery");
+    const op = this.BinaryQueryOperator();
+    const right = this.LeafQueryOrExpr();
+    return { type: "AddSetOpQuery", op, right };
   }
 
   BinaryQueryOperator() {
-    return this.notImplemented("BinaryQueryOperator");
+    let kind;
+    if (this.acceptKeyword("UNION")) kind = "UNION";
+    else if (this.acceptKeyword("INTERSECT")) kind = "INTERSECT";
+    else if (this.acceptKeyword("EXCEPT")) kind = "EXCEPT";
+    else return this.notImplemented("BinaryQueryOperator");
+    let quantifier = null;
+    if (this.acceptKeyword("ALL")) quantifier = "ALL";
+    else if (this.acceptKeyword("DISTINCT")) quantifier = "DISTINCT";
+    return { type: "BinaryQueryOperator", kind, quantifier };
   }
 
   AddSetOpQueryOrExpr() {
-    return this.notImplemented("AddSetOpQueryOrExpr");
+    const op = this.BinaryQueryOperator();
+    const right = this.LeafQueryOrExpr();
+    return { type: "AddSetOpQueryOrExpr", op, right };
   }
 
   Query() {
-    return this.notImplemented("Query");
+    const withList = this.isKeyword("WITH") ? this.WithList() : null;
+    const leaf = this.LeafQuery();
+    const setOps = [];
+    while (this.isKeyword("UNION") || this.isKeyword("INTERSECT") || this.isKeyword("EXCEPT")) {
+      setOps.push(this.AddSetOpQuery());
+    }
+    return { type: "Query", withList, leaf, setOps };
   }
 
   SqlQueryEof() {
-    return this.notImplemented("SqlQueryEof");
+    const query = this.OrderedQueryOrExpr();
+    this.expect("EOF");
+    return { type: "SqlQueryEof", query };
   }
 
   ExprOrJoinOrOrderedQuery() {
-    return this.notImplemented("ExprOrJoinOrOrderedQuery");
+    if (this.isKeyword("WITH") || this.isKeyword("SELECT") || this.isKeyword("VALUES") || this.isKeyword("VALUE") || this.isKeyword("TABLE")) {
+      const query = this.Query();
+      const orderByLimitOpt = this.OrderByLimitOpt();
+      return { type: "ExprOrJoinOrOrderedQuery", kind: "QUERY", query, orderByLimitOpt };
+    }
+    const base = this.TableRef1();
+    const joins = [];
+    while (true) {
+      const save = this.pos;
+      try {
+        if (this.isKeyword("NATURAL") || this.isJoinTypeStart()) {
+          joins.push(this.JoinTable());
+          continue;
+        }
+      } catch {}
+      this.pos = save;
+      break;
+    }
+    const setOps = [];
+    while (this.isKeyword("UNION") || this.isKeyword("INTERSECT") || this.isKeyword("EXCEPT")) {
+      setOps.push(this.AddSetOpQuery());
+    }
+    return { type: "ExprOrJoinOrOrderedQuery", kind: "TABLE", base, joins, setOps };
   }
 
   ParenthesizedExpression() {
@@ -1996,11 +2070,30 @@ class CalciteParser {
   }
 
   ParenthesizedQueryOrCommaList() {
-    return this.notImplemented("ParenthesizedQueryOrCommaList");
+    this.expectSymbol("(");
+    let node;
+    if (this.isKeyword("WITH") || this.isKeyword("SELECT") || this.isKeyword("VALUES") || this.isKeyword("VALUE") || this.isKeyword("TABLE")) {
+      node = this.OrderedQueryOrExpr();
+    } else {
+      node = this.ExpressionCommaList();
+    }
+    this.expectSymbol(")");
+    return { type: "ParenthesizedQueryOrCommaList", node };
   }
 
   ParenthesizedQueryOrCommaListWithDefault() {
-    return this.notImplemented("ParenthesizedQueryOrCommaListWithDefault");
+    this.expectSymbol("(");
+    const items = [];
+    if (!this.isSymbol(")")) {
+      const first = this.acceptKeyword("DEFAULT") ? { type: "Default" } : this.Expression();
+      items.push(first);
+      while (this.acceptSymbol(",")) {
+        const item = this.acceptKeyword("DEFAULT") ? { type: "Default" } : this.Expression();
+        items.push(item);
+      }
+    }
+    this.expectSymbol(")");
+    return { type: "ParenthesizedQueryOrCommaListWithDefault", items };
   }
 
   ExpressionCommaList() {
@@ -2390,15 +2483,45 @@ class CalciteParser {
   }
 
   PartitionedQueryOrQueryOrExpr() {
-    return this.notImplemented("PartitionedQueryOrQueryOrExpr");
+    const query = this.OrderedQueryOrExpr();
+    let partitionBy = null;
+    if (this.acceptKeyword("PARTITION")) {
+      this.expectKeyword("BY");
+      partitionBy = this.SimpleIdentifierOrList();
+    }
+    let orderBy = null;
+    if (this.isKeyword("ORDER")) {
+      orderBy = this.OrderByOfSetSemanticsTable();
+    }
+    return { type: "PartitionedQueryOrQueryOrExpr", query, partitionBy, orderBy };
   }
 
   PartitionedByAndOrderBy() {
-    return this.notImplemented("PartitionedByAndOrderBy");
+    let partitionBy = null;
+    if (this.acceptKeyword("PARTITION")) {
+      this.expectKeyword("BY");
+      partitionBy = this.SimpleIdentifierOrList();
+    }
+    let orderBy = null;
+    if (this.isKeyword("ORDER")) {
+      orderBy = this.OrderByOfSetSemanticsTable();
+    }
+    return { type: "PartitionedByAndOrderBy", partitionBy, orderBy };
   }
 
   OrderByOfSetSemanticsTable() {
-    return this.notImplemented("OrderByOfSetSemanticsTable");
+    this.expectKeyword("ORDER");
+    this.expectKeyword("BY");
+    if (this.acceptSymbol("(")) {
+      const items = [this.AddOrderItem()];
+      while (this.acceptSymbol(",")) {
+        items.push(this.AddOrderItem());
+      }
+      this.expectSymbol(")");
+      return { type: "OrderByOfSetSemanticsTable", items, parenthesized: true };
+    }
+    const item = this.AddOrderItem();
+    return { type: "OrderByOfSetSemanticsTable", items: [item], parenthesized: false };
   }
 
   NamedFunctionCall() {
