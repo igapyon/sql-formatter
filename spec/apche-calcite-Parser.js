@@ -16,8 +16,11 @@ class CalciteLexer {
     const s = this.input;
     while (this.pos < s.length) {
       const ch = s[this.pos];
-      if (/\s/.test(ch)) { this.pos++; continue; }
-      // strings
+      if (/\s/.test(ch)) {
+        this.pos++;
+        continue;
+      }
+      // strings (single-quoted, no escape handling)
       if (ch === "'") {
         let value = "";
         this.pos++;
@@ -37,7 +40,7 @@ class CalciteLexer {
         this.tokens.push({ type: "NUMBER", value });
         continue;
       }
-      // identifiers/keywords
+      // identifiers
       if (/[A-Za-z_]/.test(ch)) {
         let value = "";
         while (this.pos < s.length && /[A-Za-z0-9_]/.test(s[this.pos])) {
@@ -46,15 +49,15 @@ class CalciteLexer {
         this.tokens.push({ type: "IDENT", value });
         continue;
       }
-      // operators/punct
+      // symbols (two-char first)
       const two = s.slice(this.pos, this.pos + 2);
       const twoOps = ["<=", ">=", "<>", "!=", "||", "::", "->"];
       if (twoOps.includes(two)) {
-        this.tokens.push({ type: two, value: two });
+        this.tokens.push({ type: "SYMBOL", value: two });
         this.pos += 2;
         continue;
       }
-      this.tokens.push({ type: ch, value: ch });
+      this.tokens.push({ type: "SYMBOL", value: ch });
       this.pos++;
     }
     this.tokens.push({ type: "EOF", value: null });
@@ -69,6 +72,37 @@ class CalciteParser {
   }
   peek() { return this.tokens[this.pos] || { type: "EOF", value: null }; }
   next() { return this.tokens[this.pos++] || { type: "EOF", value: null }; }
+  isEOF() { return this.peek().type === "EOF"; }
+  isSymbol(value) {
+    const t = this.peek();
+    return t.type === "SYMBOL" && t.value === value;
+  }
+  isKeyword(value) {
+    const t = this.peek();
+    return t.type === "IDENT" && String(t.value).toUpperCase() === value;
+  }
+  acceptSymbol(value) {
+    if (this.isSymbol(value)) return this.next();
+    return null;
+  }
+  acceptKeyword(value) {
+    if (this.isKeyword(value)) return this.next();
+    return null;
+  }
+  expectSymbol(value) {
+    const t = this.peek();
+    if (!this.isSymbol(value)) {
+      throw new Error(`Expected symbol ${value} but got ${t.type}:${t.value}`);
+    }
+    return this.next();
+  }
+  expectKeyword(value) {
+    const t = this.peek();
+    if (!this.isKeyword(value)) {
+      throw new Error(`Expected keyword ${value} but got ${t.type}:${t.value}`);
+    }
+    return this.next();
+  }
   expect(type) {
     const t = this.peek();
     if (t.type !== type) {
@@ -82,19 +116,59 @@ class CalciteParser {
   }
 
   SqlStmtList() {
-    return this.notImplemented("SqlStmtList");
+    const statements = [];
+    if (!this.isEOF()) {
+      statements.push(this.SqlStmt());
+      while (this.acceptSymbol(";")) {
+        if (this.isEOF()) break;
+        statements.push(this.SqlStmt());
+      }
+    }
+    this.expect("EOF");
+    return { type: "SqlStmtList", statements };
   }
 
   SqlStmtEof() {
-    return this.notImplemented("SqlStmtEof");
+    const stmt = this.SqlStmt();
+    this.expect("EOF");
+    return { type: "SqlStmtEof", stmt };
   }
 
   SqlExpressionEof() {
-    return this.notImplemented("SqlExpressionEof");
+    const expr = this.Expression();
+    this.expect("EOF");
+    return { type: "SqlExpressionEof", expr };
   }
 
   SqlStmt() {
-    return this.notImplemented("SqlStmt");
+    if (this.isKeyword("SET") || this.isKeyword("RESET")) {
+      return this.SqlSetOption();
+    }
+    if (this.isKeyword("ALTER")) {
+      return this.SqlAlter();
+    }
+    if (this.isKeyword("EXPLAIN")) {
+      return this.SqlExplain();
+    }
+    if (this.isKeyword("DESCRIBE")) {
+      return this.SqlDescribe();
+    }
+    if (this.isKeyword("INSERT") || this.isKeyword("UPSERT")) {
+      return this.SqlInsert();
+    }
+    if (this.isKeyword("DELETE")) {
+      return this.SqlDelete();
+    }
+    if (this.isKeyword("UPDATE")) {
+      return this.SqlUpdate();
+    }
+    if (this.isKeyword("MERGE")) {
+      return this.SqlMerge();
+    }
+    if (this.isKeyword("CALL")) {
+      return this.SqlProcedureCall();
+    }
+    return this.OrderedQueryOrExpr();
   }
 
   SqlSetOption() {
@@ -162,22 +236,61 @@ class CalciteParser {
   }
 
   OrderedQueryOrExpr() {
-    return this.notImplemented("OrderedQueryOrExpr");
+    const query = this.QueryOrExpr();
+    const orderByLimitOpt = this.OrderByLimitOpt();
+    return { type: "OrderedQueryOrExpr", query, orderByLimitOpt };
   }
 
   QueryOrExpr() {
-    return this.notImplemented("QueryOrExpr");
+    const withList = this.isKeyword("WITH") ? this.WithList() : null;
+    const leaf = this.LeafQueryOrExpr();
+    const setOps = [];
+    while (this.isKeyword("UNION") || this.isKeyword("INTERSECT") || this.isKeyword("EXCEPT")) {
+      setOps.push(this.AddSetOpQuery());
+    }
+    return { type: "QueryOrExpr", withList, leaf, setOps };
   }
 
   OrderByLimitOpt() {
-    return this.notImplemented("OrderByLimitOpt");
+    const orderBy = this.isKeyword("ORDER") ? this.OrderBy() : null;
+    let limit = null;
+    let offset = null;
+    let fetch = null;
+    if (this.isKeyword("LIMIT")) {
+      limit = this.LimitClause();
+      if (this.isKeyword("OFFSET")) {
+        offset = this.OffsetClause();
+      }
+    } else if (this.isKeyword("OFFSET")) {
+      offset = this.OffsetClause();
+      if (this.isKeyword("LIMIT")) {
+        limit = this.LimitClause();
+      } else if (this.isKeyword("FETCH")) {
+        fetch = this.FetchClause();
+      }
+    } else if (this.isKeyword("FETCH")) {
+      fetch = this.FetchClause();
+    }
+    return { type: "OrderByLimitOpt", orderBy, limit, offset, fetch };
   }
 
   LeafQueryOrExpr() {
-    return this.notImplemented("LeafQueryOrExpr");
+    if (this.isKeyword("SELECT") || this.isKeyword("VALUES") || this.isKeyword("VALUE") || this.isKeyword("TABLE")) {
+      return this.LeafQuery();
+    }
+    return this.Expression();
   }
 
   LeafQuery() {
+    if (this.isKeyword("SELECT")) {
+      return this.SqlSelect();
+    }
+    if (this.isKeyword("VALUES") || this.isKeyword("VALUE")) {
+      return this.TableConstructor();
+    }
+    if (this.isKeyword("TABLE")) {
+      return this.ExplicitTable();
+    }
     return this.notImplemented("LeafQuery");
   }
 
@@ -194,15 +307,59 @@ class CalciteParser {
   }
 
   WithList() {
-    return this.notImplemented("WithList");
+    this.expectKeyword("WITH");
+    const recursive = Boolean(this.acceptKeyword("RECURSIVE"));
+    const items = [this.AddWithItem()];
+    while (this.acceptSymbol(",")) {
+      items.push(this.AddWithItem());
+    }
+    return { type: "WithList", recursive, items };
   }
 
   SqlSelect() {
-    return this.notImplemented("SqlSelect");
+    this.expectKeyword("SELECT");
+    // hints and SqlSelectKeywords are dialect-specific; skip here.
+    const stream = Boolean(this.acceptKeyword("STREAM"));
+    let setQuantifier = null;
+    if (this.acceptKeyword("ALL")) setQuantifier = "ALL";
+    else if (this.acceptKeyword("DISTINCT")) setQuantifier = "DISTINCT";
+    const selectItems = [this.AddSelectItem()];
+    while (this.acceptSymbol(",")) {
+      selectItems.push(this.AddSelectItem());
+    }
+    let from = null;
+    let where = null;
+    let groupBy = null;
+    let having = null;
+    let window = null;
+    let qualify = null;
+    if (this.acceptKeyword("FROM")) {
+      from = this.FromClause();
+      if (this.isKeyword("WHERE")) where = this.Where();
+      if (this.isKeyword("GROUP")) groupBy = this.GroupBy();
+      if (this.isKeyword("HAVING")) having = this.Having();
+      if (this.isKeyword("WINDOW")) window = this.Window();
+      if (this.isKeyword("QUALIFY")) qualify = this.Qualify();
+    }
+    return {
+      type: "SqlSelect",
+      stream,
+      setQuantifier,
+      selectItems,
+      from,
+      where,
+      groupBy,
+      having,
+      window,
+      qualify,
+    };
   }
 
   SelectExpression() {
-    return this.notImplemented("SelectExpression");
+    if (this.acceptSymbol("*")) {
+      return { type: "SelectExpression", star: true };
+    }
+    return this.Expression();
   }
 
   GroupingElementList() {
@@ -222,11 +379,18 @@ class CalciteParser {
   }
 
   OrderBy() {
-    return this.notImplemented("OrderBy");
+    this.expectKeyword("ORDER");
+    this.expectKeyword("BY");
+    const list = this.OrderItemList();
+    return { type: "OrderBy", list };
   }
 
   OrderItemList() {
-    return this.notImplemented("OrderItemList");
+    const items = [this.AddOrderItem()];
+    while (this.acceptSymbol(",")) {
+      items.push(this.AddOrderItem());
+    }
+    return { type: "OrderItemList", items };
   }
 
   LimitClause() {
