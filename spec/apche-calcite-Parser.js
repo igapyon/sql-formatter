@@ -1366,7 +1366,7 @@ class CalciteParser {
         this.expectKeyword("OF");
         return { type: "BinaryRowOperator", op: "NOT SUBMULTISET OF" };
       }
-      return this.notImplemented("BinaryRowOperator");
+      return null;
     }
     if (this.acceptKeyword("CONTAINS")) return { type: "BinaryRowOperator", op: "CONTAINS" };
     if (this.acceptKeyword("OVERLAPS")) return { type: "BinaryRowOperator", op: "OVERLAPS" };
