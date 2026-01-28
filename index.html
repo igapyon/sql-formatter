@@ -341,7 +341,7 @@
         lines.push(`${indent(ctx, 1)}${formatNode(node.where.expr, { ...ctx, indent: ctx.indent + 1 })}`);
       }
       if (node.groupBy) {
-        lines.push(`${indent(ctx)}${renderGroupBy(node.groupBy, { ...ctx, indent: ctx.indent + 1 })}`);
+        lines.push(`${indent(ctx)}${renderGroupBy(node.groupBy, ctx)}`);
       }
       if (node.having) {
         lines.push(`${indent(ctx)}HAVING ${formatNode(node.having.expr, { ...ctx, indent: ctx.indent + 1 })}`);
@@ -351,7 +351,7 @@
         lines.push(`${indent(ctx, 1)}${formatNode(node.qualify.expr, { ...ctx, indent: ctx.indent + 1 })}`);
       }
       if (node.orderBy) {
-        lines.push(`${indent(ctx)}${renderOrderBy(node.orderBy, { ...ctx, indent: ctx.indent + 1 })}`);
+        lines.push(`${indent(ctx)}${renderOrderBy(node.orderBy, ctx)}`);
       }
       return lines.join('\n');
     }
@@ -429,13 +429,13 @@
         case 'TableRef':
           return renderTableRef(node, ctx);
         case 'Subquery': {
-          const inner = formatNode(node.query, { ...ctx, indent: ctx.indent + 1 });
+          const inner = formatNode(node.query, { ...ctx, indent: 0 });
           const pad = indent(ctx, 1);
           const body = inner ? inner.split('\n').map(line => pad + line).join('\n') : pad;
           return `(\n${body}\n${indent(ctx)})`;
         }
         case 'LateralSubquery': {
-          const inner = formatNode(node.query, { ...ctx, indent: ctx.indent + 1 });
+          const inner = formatNode(node.query, { ...ctx, indent: 0 });
           const pad = indent(ctx, 1);
           const body = inner ? inner.split('\n').map(line => pad + line).join('\n') : pad;
           return `LATERAL (\n${body}\n${indent(ctx)})`;
