@@ -43,6 +43,62 @@ VALUES
     )`,
   },
   {
+    name: 'insert-values-null',
+    sql: "INSERT INTO employee(id, name, romaji) VALUES (2, '山田', NULL)",
+    expect: `INSERT
+INTO
+    employee
+    (
+        id
+        , name
+        , romaji
+    )
+VALUES
+    (
+        2
+        , '山田'
+        , NULL
+    )`,
+  },
+  {
+    name: 'insert-values-special-literals',
+    sql: "INSERT INTO flags(id, t, f, u) VALUES (1, TRUE, FALSE, UNKNOWN)",
+    expect: `INSERT
+INTO
+    flags
+    (
+        id
+        , t
+        , f
+        , u
+    )
+VALUES
+    (
+        1
+        , TRUE
+        , FALSE
+        , UNKNOWN
+    )`,
+  },
+  {
+    name: 'insert-values-datetime-literals',
+    sql: "INSERT INTO events(d, t, ts) VALUES (DATE '2024-01-01', TIME '12:34:56', TIMESTAMP '2024-01-01 12:34:56')",
+    expect: `INSERT
+INTO
+    events
+    (
+        d
+        , t
+        , ts
+    )
+VALUES
+    (
+        DATE '2024-01-01'
+        , TIME '12:34:56'
+        , TIMESTAMP '2024-01-01 12:34:56'
+    )`,
+  },
+  {
     name: 'select-group-by',
     sql: 'SELECT a, b FROM t GROUP BY a, b',
     expect: `SELECT

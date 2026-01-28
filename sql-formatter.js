@@ -107,6 +107,18 @@ function renderNode(node, ctx) {
       return String(node.value);
     case 'Literal':
       return String(node.value);
+    case 'SpecialLiteral':
+      return node.value;
+    case 'DateTimeLiteral':
+      if (node.kind === 'd' || node.kind === 't' || node.kind === 'ts') {
+        const prefix = node.kind === 'd' ? 'd' : node.kind === 't' ? 't' : 'ts';
+        return `{${prefix} ${renderNode(node.value, ctx)}}`;
+      }
+      if (node.kind === 'TIME WITH TIME ZONE' || node.kind === 'TIMESTAMP WITH TIME ZONE') {
+        const local = node.local ? ' LOCAL' : '';
+        return `${node.kind}${local} ${renderNode(node.value, ctx)}`;
+      }
+      return `${node.kind} ${renderNode(node.value, ctx)}`;
     case 'Identifier':
       return node.value || node.name;
     case 'CompoundIdentifier':
