@@ -66,6 +66,33 @@ class CalciteLexer {
       if (s[this.pos] === quote) this.pos++;
       return { value, start, end: this.pos };
     };
+    const readDoubleQuotedMaybeString = () => {
+      const start = this.pos;
+      let value = "";
+      let isString = false;
+      this.pos++;
+      while (this.pos < len) {
+        if (s[this.pos] === "\\") {
+          if (this.pos + 1 < len) {
+            value += s[this.pos + 1];
+            this.pos += 2;
+            isString = true;
+            continue;
+          }
+        }
+        if (s[this.pos] === "\"") {
+          if (s[this.pos + 1] === "\"") {
+            value += "\"";
+            this.pos += 2;
+            continue;
+          }
+          break;
+        }
+        value += s[this.pos++];
+      }
+      if (s[this.pos] === "\"") this.pos++;
+      return { value, start, end: this.pos, isString };
+    };
     const tryReadBracketIdentifier = () => {
       let p = this.pos + 1;
       let value = "";
@@ -101,12 +128,24 @@ class CalciteLexer {
         continue;
       }
       // block comment
-      if (ch === "/" && s[this.pos + 1] === "*") {
+      if (ch === "/" && s[this.pos + 1] === "*" && s[this.pos + 2] !== "+") {
         this.pos += 2;
         while (this.pos < s.length && !(s[this.pos] === "*" && s[this.pos + 1] === "/")) {
           this.pos++;
         }
         if (this.pos < s.length) this.pos += 2;
+        continue;
+      }
+      // table hints (/*+ ... */)
+      if (ch === "/" && s[this.pos + 1] === "*" && s[this.pos + 2] === "+") {
+        const start = this.pos;
+        this.pos += 3;
+        let value = "";
+        while (this.pos < s.length && !(s[this.pos] === "*" && s[this.pos + 1] === "/")) {
+          value += s[this.pos++];
+        }
+        if (this.pos < s.length) this.pos += 2;
+        this.tokens.push({ type: "HINT", value: value.trim(), start, end: this.pos });
         continue;
       }
       // strings (single-quoted, with prefix/unicode/binary support)
@@ -141,7 +180,10 @@ class CalciteLexer {
             let q = skipWhitespace(p + "UESCAPE".length);
             if (s[q] === "'") {
               this.pos = q;
-              readQuotedString();
+              const esc = readQuotedString();
+              if (esc.value.length !== 1) {
+                throw new Error("UESCAPE must be a single character");
+              }
               p = skipWhitespace(this.pos);
             }
           }
@@ -164,12 +206,31 @@ class CalciteLexer {
         const start = this.pos;
         this.pos += 2;
         const { value, end } = readQuotedIdentifier("\"");
-        this.tokens.push({ type: "IDENT", value, start, end });
+        let p = skipWhitespace(this.pos);
+        if (startsWithKeywordAt(p, "UESCAPE")) {
+          let q = skipWhitespace(p + "UESCAPE".length);
+          if (s[q] !== "'") {
+            throw new Error("UESCAPE requires a quoted escape character");
+          }
+          this.pos = q;
+          const esc = readQuotedString();
+          if (esc.value.length !== 1) {
+            throw new Error("UESCAPE must be a single character");
+          }
+          p = skipWhitespace(this.pos);
+        }
+        this.pos = p;
+        this.tokens.push({ type: "IDENT", value, start, end: this.pos });
         continue;
       }
       if (ch === '"' || ch === "`") {
-        const { value, start, end } = readQuotedIdentifier(ch);
-        this.tokens.push({ type: "IDENT", value, start, end });
+        if (ch === "\"") {
+          const { value, start, end, isString } = readDoubleQuotedMaybeString();
+          this.tokens.push({ type: isString ? "STRING" : "IDENT", value, start, end });
+        } else {
+          const { value, start, end } = readQuotedIdentifier(ch);
+          this.tokens.push({ type: "IDENT", value, start, end });
+        }
         continue;
       }
       // numbers (including leading dot and exponent)
@@ -371,7 +432,7 @@ class CalciteParser {
     return keywords.has(value);
   }
   isTableHintsStart() {
-    return this.isSymbol("/") && this.isSymbolAt("*", 1) && this.isSymbolAt("+", 2);
+    return this.peek().type === "HINT";
   }
   expect(type) {
     const t = this.peek();
@@ -2835,15 +2896,12 @@ class CalciteParser {
   }
 
   TableHints() {
-    this.expectSymbol("/");
-    this.expectSymbol("*");
-    this.expectSymbol("+");
-    const hints = [this.AddHint()];
-    while (this.acceptSymbol(",")) {
-      hints.push(this.AddHint());
+    const t = this.peek();
+    if (t.type !== "HINT") {
+      throw new Error(`Expected HINT but got ${t.type}:${t.value}`);
     }
-    this.expectSymbol("*");
-    this.expectSymbol("/");
+    this.next();
+    const hints = t.value ? t.value.split(",").map((s) => s.trim()).filter(Boolean) : [];
     return { type: "TableHints", hints };
   }
 

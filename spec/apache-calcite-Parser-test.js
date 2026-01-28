@@ -43,6 +43,8 @@ const cases = [
   { name: 'lexer-quoted-ident-backtick', sql: 'SELECT `a` FROM `b`', fn: 'SqlStmtList' },
   { name: 'lexer-quoted-ident-bracket', sql: 'SELECT [Select] FROM [From]', fn: 'SqlStmtList' },
   { name: 'lexer-hyphenated-ident', sql: 'SELECT * FROM a-b', fn: 'SqlStmtList' },
+  { name: 'lexer-bigquery-double-quoted-string', sql: 'SELECT "a\\\"b" FROM t', fn: 'SqlStmtList' },
+  { name: 'lexer-unicode-quoted-ident-uescape', sql: 'SELECT * FROM U&"A\\\\0042" UESCAPE \'\\\\\'', fn: 'SqlStmtList' },
   { name: 'lexer-string-escape', sql: "SELECT 'a''b' FROM t", fn: 'SqlStmtList' },
   { name: 'lexer-string-prefixed-n', sql: "SELECT N'abc' FROM t", fn: 'SqlStmtList' },
   { name: 'lexer-string-prefixed-e', sql: "SELECT E'\\n' FROM t", fn: 'SqlStmtList' },
@@ -164,6 +166,7 @@ const cases = [
   // DML/DDL extras
   { name: 'insert-upsert', sql: 'UPSERT INTO t(a) VALUES (1)', fn: 'SqlStmtList' },
   { name: 'insert-hints', sql: 'INSERT INTO t /*+ hint */ (a) VALUES (1)', fn: 'SqlStmtList' },
+  { name: 'select-hints-multi', sql: 'SELECT /*+ hint1, hint2 */ * FROM t', fn: 'SqlStmtList' },
   { name: 'update-with-alias', sql: 'UPDATE t AS x SET a = 1', fn: 'SqlStmtList' },
   { name: 'update-with-extend', sql: 'UPDATE t EXTEND (a INTEGER) SET a = 1', fn: 'SqlStmtList' },
   { name: 'delete-with-alias', sql: 'DELETE FROM t AS x', fn: 'SqlStmtList' },
