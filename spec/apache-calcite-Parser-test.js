@@ -42,6 +42,7 @@ const cases = [
   { name: 'lexer-quoted-ident-double', sql: 'SELECT "Select" FROM "From"', fn: 'SqlStmtList' },
   { name: 'lexer-quoted-ident-backtick', sql: 'SELECT `a` FROM `b`', fn: 'SqlStmtList' },
   { name: 'lexer-quoted-ident-bracket', sql: 'SELECT [Select] FROM [From]', fn: 'SqlStmtList' },
+  { name: 'lexer-quoted-ident-bracket-wide', sql: 'SELECT [a b,c] FROM t', fn: 'SqlStmtList' },
   { name: 'lexer-hyphenated-ident', sql: 'SELECT * FROM a-b', fn: 'SqlStmtList' },
   { name: 'lexer-bigquery-double-quoted-string', sql: 'SELECT "a\\\"b" FROM t', fn: 'SqlStmtList' },
   { name: 'lexer-unicode-quoted-ident-uescape', sql: 'SELECT * FROM U&"A\\\\0042" UESCAPE \'\\\'', fn: 'SqlStmtList' },

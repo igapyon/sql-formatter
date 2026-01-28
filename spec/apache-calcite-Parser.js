@@ -110,7 +110,6 @@ class CalciteLexer {
       }
       if (s[p] !== "]") return null;
       if (!value || !/^[A-Za-z_]/.test(value)) return null;
-      if (!/^[A-Za-z0-9_ \\-]+$/.test(value)) return null;
       const start = this.pos;
       this.pos = p + 1;
       return { value, start, end: this.pos };
