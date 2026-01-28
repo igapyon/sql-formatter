@@ -111,6 +111,16 @@ const cases = [
   { name: 'describe-schema', sql: 'DESCRIBE SCHEMA sch', fn: 'SqlStmtList' },
   { name: 'set-string', sql: "SET foo = 'bar'", fn: 'SqlStmtList' },
   { name: 'set-null', sql: 'SET foo = NULL', fn: 'SqlStmtList' },
+  { name: 'setop-union-all', sql: 'SELECT a FROM t UNION ALL SELECT a FROM u', fn: 'SqlStmtList' },
+  { name: 'setop-union-distinct', sql: 'SELECT a FROM t UNION DISTINCT SELECT a FROM u', fn: 'SqlStmtList' },
+  { name: 'setop-except-all', sql: 'SELECT a FROM t EXCEPT ALL SELECT a FROM u', fn: 'SqlStmtList' },
+  { name: 'setop-intersect-distinct', sql: 'SELECT a FROM t INTERSECT DISTINCT SELECT a FROM u', fn: 'SqlStmtList' },
+  { name: 'setop-chained', sql: 'SELECT a FROM t UNION SELECT a FROM u INTERSECT SELECT a FROM v', fn: 'SqlStmtList' },
+  { name: 'setop-order-limit', sql: 'SELECT a FROM t UNION SELECT a FROM u ORDER BY a LIMIT 5', fn: 'SqlStmtList' },
+  { name: 'setop-order-fetch', sql: 'SELECT a FROM t UNION SELECT a FROM u ORDER BY a FETCH FIRST 3 ROWS ONLY', fn: 'SqlStmtList' },
+  { name: 'setop-order-offset-limit', sql: 'SELECT a FROM t UNION SELECT a FROM u ORDER BY a OFFSET 2 LIMIT 4', fn: 'SqlStmtList' },
+  { name: 'setop-table-values', sql: 'VALUES (1) UNION SELECT 2', fn: 'SqlStmtList' },
+  { name: 'setop-table-table', sql: 'TABLE t UNION TABLE u', fn: 'SqlStmtList' },
 ];
 
 const negativeCases = [
