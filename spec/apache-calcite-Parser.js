@@ -813,6 +813,9 @@ class CalciteParser {
     if (having && !groupBy) {
       throw new Error("HAVING requires GROUP BY");
     }
+    if (qualify && !from) {
+      throw new Error("QUALIFY requires FROM");
+    }
     return {
       type: "SqlSelect",
       hints,

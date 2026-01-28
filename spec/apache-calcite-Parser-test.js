@@ -152,6 +152,14 @@ const negativeCases = [
   { name: 'neg-limit-comma', sql: 'SELECT * FROM t LIMIT , 10', fn: 'SqlStmtList' },
   { name: 'neg-explain-missing-for', sql: 'EXPLAIN PLAN SELECT 1', fn: 'SqlStmtList' },
   { name: 'neg-describe-missing-target', sql: 'DESCRIBE', fn: 'SqlStmtList' },
+  { name: 'neg-qualify-without-from', sql: 'SELECT a QUALIFY ROW_NUMBER() OVER (ORDER BY a) = 1', fn: 'SqlStmtList' },
+  { name: 'neg-order-without-by', sql: 'SELECT * FROM t ORDER a', fn: 'SqlStmtList' },
+  { name: 'neg-group-without-by', sql: 'SELECT a FROM t GROUP a', fn: 'SqlStmtList' },
+  { name: 'neg-fetch-invalid-mode', sql: 'SELECT * FROM t ORDER BY a FETCH MIDDLE 1 ROW ONLY', fn: 'SqlStmtList' },
+  { name: 'neg-update-missing-set', sql: 'UPDATE t WHERE a = 1', fn: 'SqlStmtList' },
+  { name: 'neg-delete-missing-from', sql: 'DELETE t', fn: 'SqlStmtList' },
+  { name: 'neg-merge-missing-into', sql: 'MERGE t USING u ON t.id = u.id WHEN MATCHED THEN UPDATE SET a = 1', fn: 'SqlStmtList' },
+  { name: 'neg-insert-missing-into', sql: 'INSERT t(a) VALUES (1)', fn: 'SqlStmtList' },
 ];
 
 if (require.main === module) {
