@@ -35,6 +35,8 @@ function renderNode(node, ctx) {
       return renderNode(node.leaf, ctx);
     case 'SqlSelect':
       return renderSelect(node, ctx);
+    case 'SqlInsert':
+      return renderInsert(node, ctx);
     case 'AddSelectItem':
       return renderSelectItem(node, ctx);
     case 'SelectExpression':
@@ -76,6 +78,24 @@ function renderNode(node, ctx) {
       return renderOrderItem(node, ctx);
     case 'GroupingElementList':
       return node.items.map(it => renderNode(it, ctx)).join('\n');
+    case 'ParenthesizedQueryOrCommaListWithDefault':
+      return renderParenList(node.items, ctx, (it) => (it.type === 'Default' ? 'DEFAULT' : renderNode(it, ctx)));
+    case 'Default':
+      return 'DEFAULT';
+    case 'RowConstructor':
+      if (node.kind === 'EXPR') return renderNode(node.expr, ctx);
+      if (node.kind === 'ROW') return `ROW ${renderNode(node.list, ctx)}`;
+      if (node.kind === 'PAREN_ROW') return `(ROW ${renderNode(node.list, ctx)})`;
+      return renderNode(node.list, ctx);
+    case 'ParenthesizedCompoundIdentifierList':
+      return renderParenList(node.items, ctx, (it) => renderNode(it, ctx));
+    case 'AddCompoundIdentifierType': {
+      const name = renderNode(node.name, ctx);
+      const dataType = node.dataType ? ` ${renderNode(node.dataType, ctx)}` : '';
+      return `${name}${dataType}`;
+    }
+    case 'TableConstructor':
+      return `${node.kind} ${node.rows.map(r => renderNode(r, ctx)).join(', ')}`;
     case 'StringLiteral':
       return `'${node.value}'`;
     case 'NumericLiteral':
@@ -187,6 +207,92 @@ function renderOrderItem(node, ctx) {
   const expr = renderNode(node.expr, ctx);
   const dir = node.direction ? ` ${node.direction}` : '';
   return `${expr}${dir}`;
+}
+
+function renderParenList(items, ctx, renderItem) {
+  if (!items || items.length === 0) return '()';
+  const lines = [`${indent(ctx)}(`];
+  const first = renderItem(items[0]);
+  lines.push(`${indent(ctx, 1)}${first}`);
+  for (let i = 1; i < items.length; i++) {
+    const item = renderItem(items[i]);
+    lines.push(`${indent(ctx, 1)}, ${item}`);
+  }
+  lines.push(`${indent(ctx)})`);
+  return lines.join('\n');
+}
+
+function indentMultiline(text, pad, commaPrefix = false) {
+  const lines = text.split('\n');
+  return lines
+    .map((line, idx) => {
+      if (idx === 0 && commaPrefix) {
+        return `${pad}, ${line.trimStart()}`;
+      }
+      return `${pad}${line}`;
+    })
+    .join('\n');
+}
+
+function renderInsert(node, ctx) {
+  const lines = [];
+  lines.push('INSERT');
+  lines.push(`${indent(ctx)}INTO`);
+  lines.push(`${indent(ctx, 1)}${renderNode(node.table, ctx)}`);
+  if (node.columns) {
+    const cols = renderNode(node.columns, { ...ctx, indent: ctx.indent + 1 });
+    lines.push(cols);
+  }
+  if (node.source) {
+    const sourceNode =
+      node.source.type === 'OrderedQueryOrExpr' && node.source.query && node.source.query.leaf
+        ? node.source.query.leaf
+        : node.source;
+    if (sourceNode.type === 'TableConstructor' && sourceNode.kind === 'VALUES') {
+      lines.push(`${indent(ctx)}VALUES`);
+      sourceNode.rows.forEach((row) => {
+        lines.push(renderValuesRow(row, ctx));
+      });
+    } else {
+      const sourceText = renderNode(node.source, { ...ctx, indent: 0 }).trim();
+      if (sourceText.startsWith('VALUES ')) {
+        const rest = sourceText.slice('VALUES '.length);
+        lines.push(`${indent(ctx)}VALUES`);
+        lines.push(`${indent(ctx, 1)}${rest}`);
+      } else if (sourceText === 'VALUES') {
+        lines.push(`${indent(ctx)}VALUES`);
+      } else {
+        lines.push(`${indent(ctx)}${sourceText}`);
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
+function renderValuesRow(row, ctx) {
+  if (!row) return '';
+  if (row.kind === 'EXPR') {
+    if (row.expr && row.expr.type === 'ParenthesizedQueryOrCommaListWithDefault') {
+      return renderValuesList(row.expr.items, ctx);
+    }
+    return `${indent(ctx, 1)}${renderNode(row.expr, ctx)}`;
+  }
+  const list = row.list && row.list.items ? row.list.items : [];
+  if (list.length === 0) return `${indent(ctx, 1)}()`;
+  return renderValuesList(list, ctx);
+}
+
+function renderValuesList(items, ctx) {
+  const base = indent(ctx, 1);
+  const inner = `${base}    `;
+  const renderItem = (it) => (it.type === 'Default' ? 'DEFAULT' : renderNode(it, ctx));
+  const lines = [`${base}(`];
+  lines.push(`${inner}${renderItem(items[0])}`);
+  for (let i = 1; i < items.length; i++) {
+    lines.push(`${inner}, ${renderItem(items[i])}`);
+  }
+  lines.push(`${base})`);
+  return lines.join('\n');
 }
 
 function renderJoin(node, ctx) {

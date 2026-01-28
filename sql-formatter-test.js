@@ -27,6 +27,22 @@ WHERE
     expectIncludes: ['SELECT -- keep comment'],
   },
   {
+    name: 'insert-values',
+    sql: 'INSERT INTO t(a, b) VALUES (1, 2)',
+    expect: `INSERT
+INTO
+    t
+    (
+        a
+        , b
+    )
+VALUES
+    (
+        1
+        , 2
+    )`,
+  },
+  {
     name: 'select-group-by',
     sql: 'SELECT a, b FROM t GROUP BY a, b',
     expect: `SELECT
