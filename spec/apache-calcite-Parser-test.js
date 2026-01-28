@@ -135,6 +135,25 @@ const cases = [
   { name: 'setop-order-offset-limit', sql: 'SELECT a FROM t UNION SELECT a FROM u ORDER BY a OFFSET 2 LIMIT 4', fn: 'SqlStmtList' },
   { name: 'setop-table-values', sql: 'VALUES (1) UNION SELECT 2', fn: 'SqlStmtList' },
   { name: 'setop-table-table', sql: 'TABLE t UNION TABLE u', fn: 'SqlStmtList' },
+  // group by variants
+  { name: 'group-by-distinct', sql: 'SELECT a FROM t GROUP BY DISTINCT a', fn: 'SqlStmtList' },
+  { name: 'group-by-all', sql: 'SELECT a FROM t GROUP BY ALL a', fn: 'SqlStmtList' },
+  { name: 'group-by-grouping-sets', sql: 'SELECT a, b FROM t GROUP BY GROUPING SETS (a, b)', fn: 'SqlStmtList' },
+  { name: 'group-by-rollup', sql: 'SELECT a, b FROM t GROUP BY ROLLUP (a, b)', fn: 'SqlStmtList' },
+  { name: 'group-by-cube', sql: 'SELECT a, b FROM t GROUP BY CUBE (a, b)', fn: 'SqlStmtList' },
+  // order by variants
+  { name: 'order-by-nulls-first', sql: 'SELECT a FROM t ORDER BY a NULLS FIRST', fn: 'SqlStmtList' },
+  { name: 'order-by-nulls-last', sql: 'SELECT a FROM t ORDER BY a DESC NULLS LAST', fn: 'SqlStmtList' },
+  // table ref variants
+  { name: 'from-lateral-subquery', sql: 'SELECT * FROM LATERAL (SELECT 1) AS x', fn: 'SqlStmtList' },
+  { name: 'from-unnest', sql: 'SELECT * FROM UNNEST(arr)', fn: 'SqlStmtList' },
+  { name: 'from-unnest-ordinality', sql: 'SELECT * FROM UNNEST(arr) WITH ORDINALITY', fn: 'SqlStmtList' },
+  { name: 'from-table-function', sql: 'SELECT * FROM TABLE(foo(1))', fn: 'SqlStmtList' },
+  // limit/offset/fetch variants
+  { name: 'select-limit-all', sql: 'SELECT a FROM t LIMIT ALL', fn: 'SqlStmtList' },
+  { name: 'select-limit-offset-comma', sql: 'SELECT a FROM t LIMIT 3, 10', fn: 'SqlStmtList' },
+  { name: 'select-offset-rows', sql: 'SELECT a FROM t ORDER BY a OFFSET 5 ROWS', fn: 'SqlStmtList' },
+  { name: 'select-fetch-next', sql: 'SELECT a FROM t ORDER BY a FETCH NEXT 3 ROWS ONLY', fn: 'SqlStmtList' },
   // DML/DDL extras
   { name: 'insert-upsert', sql: 'UPSERT INTO t(a) VALUES (1)', fn: 'SqlStmtList' },
   { name: 'insert-hints', sql: 'INSERT INTO t /*+ hint */ (a) VALUES (1)', fn: 'SqlStmtList' },
