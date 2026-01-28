@@ -25,7 +25,7 @@ class CalciteLexer {
       const next = s[p + keyword.length];
       return !(next && /[A-Za-z0-9_]/.test(next));
     };
-    const readQuotedString = () => {
+    const readQuotedString = (allowBackslashEscape = true) => {
       const start = this.pos;
       let value = "";
       this.pos++;
@@ -38,7 +38,7 @@ class CalciteLexer {
           }
           break;
         }
-        if (s[this.pos] === "\\" && this.pos + 1 < len) {
+        if (allowBackslashEscape && s[this.pos] === "\\" && this.pos + 1 < len) {
           value += s[this.pos + 1];
           this.pos += 2;
           continue;
@@ -115,6 +115,38 @@ class CalciteLexer {
       this.pos = p + 1;
       return { value, start, end: this.pos };
     };
+    const decodeUnicodeEscapes = (raw, escapeChar) => {
+      let out = "";
+      for (let i = 0; i < raw.length; i++) {
+        const ch = raw[i];
+        if (ch !== escapeChar) {
+          out += ch;
+          continue;
+        }
+        const next = raw[i + 1];
+        if (next === escapeChar) {
+          out += escapeChar;
+          i++;
+          continue;
+        }
+        if (next === "+") {
+          const hex = raw.slice(i + 2, i + 8);
+          if (!/^[0-9A-Fa-f]{6}$/.test(hex)) {
+            throw new Error("Invalid Unicode escape sequence");
+          }
+          out += String.fromCodePoint(parseInt(hex, 16));
+          i += 7;
+          continue;
+        }
+        const hex = raw.slice(i + 1, i + 5);
+        if (!/^[0-9A-Fa-f]{4}$/.test(hex)) {
+          throw new Error("Invalid Unicode escape sequence");
+        }
+        out += String.fromCodePoint(parseInt(hex, 16));
+        i += 4;
+      }
+      return out;
+    };
     while (this.pos < s.length) {
       const ch = s[this.pos];
       if (/\s/.test(ch)) {
@@ -153,10 +185,13 @@ class CalciteLexer {
           ((ch === "U" || ch === "u") && s[this.pos + 1] === "&" && s[this.pos + 2] === "'") ||
           (ch === "_" && /[A-Za-z0-9:._-]/.test(s[this.pos + 1]))) {
         let start = this.pos;
+        let unicodeString = false;
+        let escapeChar = "\\";
         if (ch === "N" || ch === "n" || ch === "E" || ch === "e" || ch === "X" || ch === "x") {
           this.pos++;
         } else if ((ch === "U" || ch === "u") && s[this.pos + 1] === "&") {
           this.pos += 2;
+          unicodeString = true;
         } else if (ch === "_") {
           this.pos++;
           while (this.pos < len && /[A-Za-z0-9:._-]/.test(s[this.pos])) {
@@ -167,12 +202,12 @@ class CalciteLexer {
           }
         }
         if (s[this.pos] === "'") {
-          let literal = readQuotedString();
+          let literal = readQuotedString(!unicodeString);
           let value = literal.value;
           let p = skipWhitespace(this.pos);
           while (s[p] === "'") {
             this.pos = p;
-            const extra = readQuotedString();
+            const extra = readQuotedString(!unicodeString);
             value += extra.value;
             p = skipWhitespace(this.pos);
           }
@@ -180,14 +215,18 @@ class CalciteLexer {
             let q = skipWhitespace(p + "UESCAPE".length);
             if (s[q] === "'") {
               this.pos = q;
-              const esc = readQuotedString();
+              const esc = readQuotedString(false);
               if (esc.value.length !== 1) {
                 throw new Error("UESCAPE must be a single character");
               }
+              escapeChar = esc.value;
               p = skipWhitespace(this.pos);
             }
           }
           this.pos = p;
+          if (unicodeString) {
+            value = decodeUnicodeEscapes(value, escapeChar);
+          }
           this.tokens.push({ type: "STRING", value, start, end: this.pos });
           continue;
         } else {
@@ -205,21 +244,24 @@ class CalciteLexer {
       if ((ch === "U" || ch === "u") && s[this.pos + 1] === "&" && s[this.pos + 2] === "\"") {
         const start = this.pos;
         this.pos += 2;
-        const { value, end } = readQuotedIdentifier("\"");
+        let { value, end } = readQuotedIdentifier("\"");
         let p = skipWhitespace(this.pos);
+        let escapeChar = "\\";
         if (startsWithKeywordAt(p, "UESCAPE")) {
           let q = skipWhitespace(p + "UESCAPE".length);
           if (s[q] !== "'") {
             throw new Error("UESCAPE requires a quoted escape character");
           }
           this.pos = q;
-          const esc = readQuotedString();
+          const esc = readQuotedString(false);
           if (esc.value.length !== 1) {
             throw new Error("UESCAPE must be a single character");
           }
+          escapeChar = esc.value;
           p = skipWhitespace(this.pos);
         }
         this.pos = p;
+        value = decodeUnicodeEscapes(value, escapeChar);
         this.tokens.push({ type: "IDENT", value, start, end: this.pos });
         continue;
       }
