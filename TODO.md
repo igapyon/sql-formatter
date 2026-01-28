@@ -51,3 +51,5 @@
 - CREATE TABLE / CREATE INDEX の整形対応
 - DROP の整形対応
 - INTERVAL リテラルの整形対応
+- index.html に GitHub リポジトリへのリンクアイコン追加
+- index.html の Web デザイン更新
