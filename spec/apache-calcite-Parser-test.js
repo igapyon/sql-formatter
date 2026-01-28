@@ -88,6 +88,19 @@ const cases = [
   { name: 'select-extract', sql: 'SELECT EXTRACT(YEAR FROM d) FROM t', fn: 'SqlStmtList' },
   { name: 'select-contains-substr', sql: "SELECT CONTAINS_SUBSTR(a, 'x') FROM t", fn: 'SqlStmtList' },
   { name: 'select-contains-substr-with-scope', sql: "SELECT CONTAINS_SUBSTR(a, 'x', JSON_SCOPE := 2) FROM t", fn: 'SqlStmtList' },
+  { name: 'select-typed-date', sql: "SELECT DATE '2020-01-01' FROM t", fn: 'SqlStmtList' },
+  { name: 'select-typed-time', sql: "SELECT TIME '12:34:56' FROM t", fn: 'SqlStmtList' },
+  { name: 'select-typed-timestamp', sql: "SELECT TIMESTAMP '2020-01-01 12:34:56' FROM t", fn: 'SqlStmtList' },
+  { name: 'select-uuid', sql: "SELECT UUID '123e4567-e89b-12d3-a456-426614174000' FROM t", fn: 'SqlStmtList' },
+  { name: 'select-interval-year', sql: "SELECT INTERVAL '2' YEAR FROM t", fn: 'SqlStmtList' },
+  { name: 'select-interval-day-to-second', sql: "SELECT INTERVAL '1 02:03:04' DAY TO SECOND FROM t", fn: 'SqlStmtList' },
+  { name: 'select-row-type', sql: 'SELECT ROW(1, 2) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-array-constructor', sql: 'SELECT ARRAY[1, 2, 3] FROM t', fn: 'SqlStmtList' },
+  { name: 'select-map-constructor', sql: 'SELECT MAP[1, 2] FROM t', fn: 'SqlStmtList' },
+  { name: 'select-multiset', sql: 'SELECT MULTISET[1, 2] FROM t', fn: 'SqlStmtList' },
+  { name: 'select-cast-typed', sql: 'SELECT CAST(a AS DECIMAL(10,2)) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-cast-with-timezone', sql: 'SELECT CAST(a AS TIMESTAMP WITH TIME ZONE) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-period', sql: "SELECT PERIOD (DATE '2020-01-01', DATE '2020-12-31') FROM t", fn: 'SqlStmtList' },
 ];
 
 const negativeCases = [
