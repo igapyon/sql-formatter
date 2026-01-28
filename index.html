@@ -270,9 +270,10 @@
     function renderOrderBy(node, ctx) {
       const items = node.list.items.map(it => renderOrderItem(it, ctx));
       if (items.length === 0) return 'ORDER BY';
-      const lines = [`ORDER BY ${items[0]}`];
+      const lines = ['ORDER BY'];
+      lines.push(`${indent(ctx, 1)}${items[0]}`);
       for (let i = 1; i < items.length; i++) {
-        lines.push(`${indent(ctx)}, ${items[i]}`);
+        lines.push(`${indent(ctx, 1)}, ${items[i]}`);
       }
       return lines.join('\n');
     }
@@ -332,7 +333,8 @@
         lines.push(prefix + renderSelectItem(item, { ...ctx, indent: ctx.indent + 1 }));
       });
       if (node.from) {
-        lines.push(`${indent(ctx)}FROM ${renderFrom(node.from, { ...ctx, indent: ctx.indent + 1 })}`);
+        lines.push(`${indent(ctx)}FROM`);
+        lines.push(`${indent(ctx, 1)}${renderFrom(node.from, { ...ctx, indent: ctx.indent + 1 })}`);
       }
       if (node.where) {
         lines.push(`${indent(ctx)}WHERE`);
