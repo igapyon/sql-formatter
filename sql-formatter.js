@@ -15,6 +15,17 @@ function renderNode(node, ctx) {
   switch (node.type) {
     case 'SqlStmtList':
       return node.statements.map(stmt => renderNode(stmt, ctx)).join('\n');
+    case 'OrderedQueryOrExpr': {
+      const withList = node.query && node.query.withList ? renderNode(node.query.withList, ctx) : null;
+      const base = node.query ? renderNode(node.query, ctx) : '';
+      const lines = [];
+      if (withList) lines.push(withList);
+      if (base) lines.push(base);
+      if (node.orderByLimitOpt) lines.push(renderOrderByLimitOpt(node.orderByLimitOpt, ctx));
+      return lines.filter(Boolean).join('\n');
+    }
+    case 'QueryOrExpr':
+      return renderNode(node.leaf, ctx);
     case 'SqlSelect':
       return renderSelect(node, ctx);
     case 'AddSelectItem':
@@ -24,6 +35,14 @@ function renderNode(node, ctx) {
       return renderNode(node.expr, ctx);
     case 'TableRef':
       return renderTableRef(node, ctx);
+    case 'TableName':
+      return renderNode(node.name, ctx);
+    case 'CompoundTableIdentifier':
+      return node.parts.map(p => (p.type === 'Identifier' ? (p.value || p.name) : '*')).join('.');
+    case 'JoinTable':
+      return renderJoin(node, ctx);
+    case 'CommaJoin':
+      return `, ${renderNode(node.table, ctx)}`;
     case 'FromClause':
       return renderFrom(node, ctx);
     case 'Where':
@@ -36,16 +55,31 @@ function renderNode(node, ctx) {
       return node.items.map(it => renderNode(it, ctx)).join('\n');
     case 'AddOrderItem':
       return renderOrderItem(node, ctx);
+    case 'GroupingElementList':
+      return node.items.map(it => renderNode(it, ctx)).join('\n');
     case 'StringLiteral':
       return `'${node.value}'`;
     case 'NumericLiteral':
+      if (node.value && typeof node.value === 'object' && node.value.value !== undefined) {
+        return String(node.value.value);
+      }
+      return String(node.value);
+    case 'UnsignedNumericLiteral':
       return String(node.value);
     case 'Literal':
       return String(node.value);
     case 'Identifier':
-      return node.name;
+      return node.value || node.name;
     case 'CompoundIdentifier':
-      return node.parts.map(p => (p.type === 'Identifier' ? p.name : '*')).join('.');
+      return node.parts.map(p => (p.type === 'Identifier' ? (p.value || p.name) : '*')).join('.');
+    case 'ParenthesizedExpression':
+      return `(${renderNode(node.node, ctx)})`;
+    case 'ParenExpression':
+      return `(${renderNode(node.node, ctx)})`;
+    case 'AddGroupingElement':
+      if (node.kind === 'EXPR') return renderNode(node.expr, ctx);
+      if (node.list) return renderNode(node.list, ctx);
+      return '';
     case 'Expression2b':
       return renderExpression2b(node, ctx);
     case 'BinaryExpression':
@@ -64,19 +98,20 @@ function renderSelect(node, ctx) {
     lines.push(prefix + renderNode(item, { ...ctx, indent: ctx.indent + 1 }));
   });
   if (node.from) {
-    lines.push(`${indent(ctx)}FROM ${renderNode(node.from, { ...ctx, indent: ctx.indent + 1 })}`);
+    lines.push(`${indent(ctx)}FROM`);
+    lines.push(`${indent(ctx, 1)}${renderNode(node.from, { ...ctx, indent: ctx.indent + 1 })}`);
   }
   if (node.where) {
     lines.push(`${indent(ctx)}${renderNode(node.where, { ...ctx, indent: ctx.indent + 1 })}`);
   }
   if (node.groupBy) {
-    lines.push(`${indent(ctx)}${renderNode(node.groupBy, { ...ctx, indent: ctx.indent + 1 })}`);
+    lines.push(`${indent(ctx)}${renderNode(node.groupBy, ctx)}`);
   }
   if (node.having) {
     lines.push(`${indent(ctx)}${renderNode(node.having, { ...ctx, indent: ctx.indent + 1 })}`);
   }
   if (node.orderBy) {
-    lines.push(`${indent(ctx)}${renderNode(node.orderBy, { ...ctx, indent: ctx.indent + 1 })}`);
+    lines.push(`${indent(ctx)}${renderNode(node.orderBy, ctx)}`);
   }
   return lines.join('\n');
 }
@@ -95,25 +130,63 @@ function renderFrom(node, ctx) {
 
 function renderTableRef(node, ctx) {
   if (node.base) {
-    return renderNode(node.base, ctx);
+    const base = renderNode(node.base, ctx);
+    const alias = node.alias ? (node.alias.value || node.alias.name || node.alias) : null;
+    return alias ? `${base} ${alias}` : base;
   }
   return '[TableRef]';
 }
 
 function renderGroupBy(node, ctx) {
-  const items = renderNode(node.list, ctx);
-  return `GROUP BY ${items}`;
+  const items = node.list.items.map(it => renderNode(it, ctx));
+  if (items.length === 0) return 'GROUP BY';
+  const lines = ['GROUP BY'];
+  lines.push(`${indent(ctx, 1)}${items[0]}`);
+  for (let i = 1; i < items.length; i++) {
+    lines.push(`${indent(ctx, 1)}, ${items[i]}`);
+  }
+  return lines.join('\n');
 }
 
 function renderOrderBy(node, ctx) {
-  const items = renderNode(node.list, ctx);
-  return `ORDER BY ${items}`;
+  const items = node.list.items.map(it => renderOrderItem(it, ctx));
+  if (items.length === 0) return 'ORDER BY';
+  const lines = ['ORDER BY'];
+  lines.push(`${indent(ctx, 1)}${items[0]}`);
+  for (let i = 1; i < items.length; i++) {
+    lines.push(`${indent(ctx, 1)}, ${items[i]}`);
+  }
+  return lines.join('\n');
 }
 
 function renderOrderItem(node, ctx) {
   const expr = renderNode(node.expr, ctx);
   const dir = node.direction ? ` ${node.direction}` : '';
   return `${expr}${dir}`;
+}
+
+function renderJoin(node, ctx) {
+  const base = `${node.joinType} ${renderNode(node.table, ctx)}`;
+  if (!node.condition) return base;
+  if (node.condition.type === 'On') {
+    const expr = renderNode(node.condition.expr, { ...ctx, indent: ctx.indent + 1 });
+    return `${base}\n${indent(ctx, 1)}ON ${expr}`;
+  }
+  if (node.condition.type === 'Using') {
+    const cols = node.condition.columns.items.map(c => c.value || c.name).join(', ');
+    return `${base}\n${indent(ctx, 1)}USING (${cols})`;
+  }
+  return base;
+}
+
+function renderOrderByLimitOpt(opt, ctx) {
+  if (!opt) return '';
+  const lines = [];
+  if (opt.orderBy) lines.push(renderOrderBy(opt.orderBy, ctx));
+  if (opt.limit) lines.push(`LIMIT ${renderNode(opt.limit.value, ctx)}`);
+  if (opt.offset) lines.push(`OFFSET ${renderNode(opt.offset.value, ctx)}`);
+  if (opt.fetch) lines.push(`FETCH ${opt.fetch.mode} ${renderNode(opt.fetch.value, ctx)} ${opt.fetch.rows} ONLY`);
+  return lines.filter(Boolean).join('\n');
 }
 
 function renderExpression2b(node, ctx) {
