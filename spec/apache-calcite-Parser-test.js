@@ -2,22 +2,34 @@
 
 const { CalciteLexer, CalciteParser } = require('./apache-calcite-Parser');
 
+const stmt = (name, sql) => ({ name, sql, fn: 'SqlStmtList' });
+const selectList = (items) => `SELECT ${items.join(', ')}`;
+const fromTable = (table) => `FROM ${table}`;
+const joinSubquery = (left, right, onExpr) =>
+  `SELECT ${left}.id FROM ${left} JOIN (SELECT id FROM ${right}) AS ${right} ON ${onExpr}`;
+
 const cases = [
   // basic
   { name: 'select-basic', sql: 'SELECT 1', fn: 'SqlStmtList' },
   { name: 'select-with-from', sql: 'SELECT a FROM t', fn: 'SqlStmtList' },
   { name: 'select-where', sql: 'SELECT a FROM t WHERE b = 1', fn: 'SqlStmtList' },
   { name: 'select-group-by', sql: 'SELECT a, COUNT(*) FROM t GROUP BY a', fn: 'SqlStmtList' },
+  // group by variants
+  { name: 'group-by-distinct', sql: 'SELECT a FROM t GROUP BY DISTINCT a', fn: 'SqlStmtList' },
+  { name: 'group-by-all', sql: 'SELECT a FROM t GROUP BY ALL a', fn: 'SqlStmtList' },
+  { name: 'group-by-grouping-sets', sql: 'SELECT a, b FROM t GROUP BY GROUPING SETS (a, b)', fn: 'SqlStmtList' },
+  { name: 'group-by-rollup', sql: 'SELECT a, b FROM t GROUP BY ROLLUP (a, b)', fn: 'SqlStmtList' },
+  { name: 'group-by-cube', sql: 'SELECT a, b FROM t GROUP BY CUBE (a, b)', fn: 'SqlStmtList' },
   { name: 'select-window', sql: 'SELECT a FROM t WINDOW w AS (PARTITION BY a)', fn: 'SqlStmtList' },
   // CTE / DML core
-  { name: 'cte', sql: 'WITH t AS (SELECT 1) SELECT * FROM t', fn: 'SqlStmtList' },
+  { name: 'with-cte', sql: 'WITH t AS (SELECT 1) SELECT * FROM t', fn: 'SqlStmtList' },
   { name: 'insert-values', sql: 'INSERT INTO t(a) VALUES (1)', fn: 'SqlStmtList' },
-  { name: 'update', sql: 'UPDATE t SET a = 1 WHERE b = 2', fn: 'SqlStmtList' },
-  { name: 'delete', sql: 'DELETE FROM t WHERE a IN (1,2,3)', fn: 'SqlStmtList' },
-  { name: 'merge', sql: 'MERGE INTO t USING u ON t.id = u.id WHEN MATCHED THEN UPDATE SET a = 1', fn: 'SqlStmtList' },
+  { name: 'update-basic', sql: 'UPDATE t SET a = 1 WHERE b = 2', fn: 'SqlStmtList' },
+  { name: 'delete-basic', sql: 'DELETE FROM t WHERE a IN (1,2,3)', fn: 'SqlStmtList' },
+  { name: 'merge-basic', sql: 'MERGE INTO t USING u ON t.id = u.id WHEN MATCHED THEN UPDATE SET a = 1', fn: 'SqlStmtList' },
   // functions / expressions
-  { name: 'json-value', sql: "SELECT JSON_VALUE(doc, '$.a' RETURNING VARCHAR) FROM t", fn: 'SqlStmtList' },
-  { name: 'date-diff', sql: 'SELECT DATE_DIFF(d1, d2, DAY) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-json-value', sql: "SELECT JSON_VALUE(doc, '$.a' RETURNING VARCHAR) FROM t", fn: 'SqlStmtList' },
+  { name: 'select-date-diff', sql: 'SELECT DATE_DIFF(d1, d2, DAY) FROM t', fn: 'SqlStmtList' },
   // MATCH_RECOGNIZE / PIVOT / UNPIVOT
   { name: 'match-recognize', sql: 'SELECT * FROM t MATCH_RECOGNIZE (PATTERN (A) DEFINE A AS a > 0)', fn: 'SqlStmtList' },
   { name: 'match-recognize-partition-order', sql: 'SELECT * FROM t MATCH_RECOGNIZE (PARTITION BY a ORDER BY b MEASURES CLASSIFIER() AS c PATTERN (A B) DEFINE A AS a > 0, B AS b > 0)', fn: 'SqlStmtList' },
@@ -35,9 +47,21 @@ const cases = [
   { name: 'lexer-block-comment', sql: 'SELECT /* block */ 1', fn: 'SqlStmtList' },
   { name: 'lexer-quoted-ident-double', sql: 'SELECT "Select" FROM "From"', fn: 'SqlStmtList' },
   { name: 'lexer-quoted-ident-backtick', sql: 'SELECT `a` FROM `b`', fn: 'SqlStmtList' },
+  { name: 'lexer-quoted-ident-bracket', sql: 'SELECT [Select] FROM [From]', fn: 'SqlStmtList' },
+  { name: 'lexer-quoted-ident-bracket-wide', sql: 'SELECT [a b,c] FROM t', fn: 'SqlStmtList' },
+  { name: 'lexer-hyphenated-ident', sql: 'SELECT * FROM a-b', fn: 'SqlStmtList' },
+  { name: 'lexer-unicode-ident', sql: 'SELECT ユーザーID, レシピID FROM recipes', fn: 'SqlStmtList' },
+  { name: 'lexer-bigquery-double-quoted-string', sql: 'SELECT "a\\\"b" FROM t', fn: 'SqlStmtList' },
+  { name: 'lexer-unicode-quoted-ident-uescape', sql: 'SELECT * FROM U&"A\\\\0042" UESCAPE \'\\\'', fn: 'SqlStmtList' },
   { name: 'lexer-string-escape', sql: "SELECT 'a''b' FROM t", fn: 'SqlStmtList' },
+  { name: 'lexer-string-prefixed-n', sql: "SELECT N'abc' FROM t", fn: 'SqlStmtList' },
+  { name: 'lexer-string-prefixed-e', sql: "SELECT E'\\n' FROM t", fn: 'SqlStmtList' },
+  { name: 'lexer-string-prefixed-x', sql: "SELECT X'0A' FROM t", fn: 'SqlStmtList' },
+  { name: 'lexer-string-unicode', sql: "SELECT U&'d\\\\0061' UESCAPE '\\' FROM t", fn: 'SqlStmtList' },
   { name: 'lexer-number-exponent', sql: 'SELECT 1.2e-3 FROM t', fn: 'SqlStmtList' },
   { name: 'lexer-number-leading-dot', sql: 'SELECT .5 FROM t', fn: 'SqlStmtList' },
+  { name: 'lexer-number-approx', sql: 'SELECT 1E+10 FROM t', fn: 'SqlStmtList' },
+  { name: 'lexer-number-decimal-dot', sql: 'SELECT 1. FROM t', fn: 'SqlStmtList' },
   // DDL / DCL
   { name: 'ddl-set', sql: 'SET foo = 1', fn: 'SqlStmtList' },
   { name: 'ddl-reset', sql: 'RESET foo', fn: 'SqlStmtList' },
@@ -56,14 +80,34 @@ const cases = [
   { name: 'select-join-natural', sql: 'SELECT * FROM a NATURAL JOIN b', fn: 'SqlStmtList' },
   { name: 'select-join-cross', sql: 'SELECT * FROM a CROSS JOIN b', fn: 'SqlStmtList' },
   { name: 'select-join-comma', sql: 'SELECT * FROM a, b', fn: 'SqlStmtList' },
+  { name: 'select-join-asof-match-condition', sql: 'SELECT * FROM a ASOF JOIN b MATCH_CONDITION a.ts <= b.ts ON a.id = b.id', fn: 'SqlStmtList' },
+  // table ref variants
+  { name: 'from-lateral-subquery', sql: 'SELECT * FROM LATERAL (SELECT 1) AS x', fn: 'SqlStmtList' },
+  { name: 'from-unnest', sql: 'SELECT * FROM UNNEST(arr)', fn: 'SqlStmtList' },
+  { name: 'from-unnest-ordinality', sql: 'SELECT * FROM UNNEST(arr) WITH ORDINALITY', fn: 'SqlStmtList' },
+  { name: 'from-table-function', sql: 'SELECT * FROM TABLE(foo(1))', fn: 'SqlStmtList' },
+  { name: 'from-tablesample', sql: 'SELECT * FROM t TABLESAMPLE SYSTEM (10) REPEATABLE (1)', fn: 'SqlStmtList' },
+  { name: 'from-snapshot', sql: "SELECT * FROM t FOR SYSTEM_TIME AS OF TIMESTAMP '2020-01-01 00:00:00'", fn: 'SqlStmtList' },
+  stmt('join-subquery', joinSubquery('a', 'b', 'a.id = b.id')),
   { name: 'select-setop-union', sql: 'SELECT a FROM t UNION SELECT a FROM u', fn: 'SqlStmtList' },
   { name: 'select-setop-intersect', sql: 'SELECT a FROM t INTERSECT SELECT a FROM u', fn: 'SqlStmtList' },
   { name: 'select-setop-except', sql: 'SELECT a FROM t EXCEPT SELECT a FROM u', fn: 'SqlStmtList' },
   { name: 'select-order-limit', sql: 'SELECT a FROM t ORDER BY a LIMIT 10', fn: 'SqlStmtList' },
   { name: 'select-offset-limit', sql: 'SELECT a FROM t ORDER BY a OFFSET 5 LIMIT 10', fn: 'SqlStmtList' },
   { name: 'select-fetch', sql: 'SELECT a FROM t ORDER BY a FETCH FIRST 3 ROWS ONLY', fn: 'SqlStmtList' },
+  { name: 'order-by-nulls-first', sql: 'SELECT a FROM t ORDER BY a NULLS FIRST', fn: 'SqlStmtList' },
+  { name: 'order-by-nulls-last', sql: 'SELECT a FROM t ORDER BY a DESC NULLS LAST', fn: 'SqlStmtList' },
+  { name: 'select-limit-all', sql: 'SELECT a FROM t LIMIT ALL', fn: 'SqlStmtList' },
+  { name: 'select-limit-offset-comma', sql: 'SELECT a FROM t LIMIT 3, 10', fn: 'SqlStmtList' },
+  { name: 'select-offset-rows', sql: 'SELECT a FROM t ORDER BY a OFFSET 5 ROWS', fn: 'SqlStmtList' },
+  { name: 'select-fetch-next', sql: 'SELECT a FROM t ORDER BY a FETCH NEXT 3 ROWS ONLY', fn: 'SqlStmtList' },
   { name: 'select-values', sql: 'VALUES (1), (2)', fn: 'SqlStmtList' },
   { name: 'select-table', sql: 'TABLE t', fn: 'SqlStmtList' },
+  // japanese identifiers
+  stmt(
+    'select-japanese-idents',
+    `${selectList(['顧客.会員ID', 'COUNT(注文ID) AS 注文数'])} ${fromTable('顧客')} GROUP BY 会員ID`
+  ),
   // expression / function variants
   { name: 'select-case', sql: 'SELECT CASE WHEN a > 0 THEN 1 ELSE 0 END FROM t', fn: 'SqlStmtList' },
   { name: 'select-cast', sql: 'SELECT CAST(a AS INTEGER) FROM t', fn: 'SqlStmtList' },
@@ -138,6 +182,7 @@ const cases = [
   // DML/DDL extras
   { name: 'insert-upsert', sql: 'UPSERT INTO t(a) VALUES (1)', fn: 'SqlStmtList' },
   { name: 'insert-hints', sql: 'INSERT INTO t /*+ hint */ (a) VALUES (1)', fn: 'SqlStmtList' },
+  { name: 'select-hints-multi', sql: 'SELECT /*+ hint1, hint2 */ * FROM t', fn: 'SqlStmtList' },
   { name: 'update-with-alias', sql: 'UPDATE t AS x SET a = 1', fn: 'SqlStmtList' },
   { name: 'update-with-extend', sql: 'UPDATE t EXTEND (a INTEGER) SET a = 1', fn: 'SqlStmtList' },
   { name: 'delete-with-alias', sql: 'DELETE FROM t AS x', fn: 'SqlStmtList' },
@@ -154,6 +199,7 @@ const negativeCases = [
   { name: 'neg-having-without-group', sql: 'SELECT a FROM t HAVING a > 0', fn: 'SqlStmtList' },
   { name: 'neg-natural-join-on', sql: 'SELECT * FROM a NATURAL JOIN b ON a.id = b.id', fn: 'SqlStmtList' },
   { name: 'neg-join-no-condition', sql: 'SELECT * FROM a JOIN b', fn: 'SqlStmtList' },
+  { name: 'neg-join-match-condition-nonasof', sql: 'SELECT * FROM a JOIN b MATCH_CONDITION a.ts <= b.ts ON a.id = b.id', fn: 'SqlStmtList' },
   { name: 'neg-window-frame-without-order', sql: 'SELECT a FROM t WINDOW w AS (ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING)', fn: 'SqlStmtList' },
   { name: 'neg-fetch-without-order', sql: 'SELECT * FROM t FETCH FIRST 1 ROW ONLY', fn: 'SqlStmtList' },
   { name: 'neg-limit-and-fetch', sql: 'SELECT * FROM t ORDER BY a LIMIT 1 FETCH FIRST 1 ROW ONLY', fn: 'SqlStmtList' },
@@ -177,6 +223,8 @@ const negativeCases = [
   { name: 'neg-delete-missing-from', sql: 'DELETE t', fn: 'SqlStmtList' },
   { name: 'neg-merge-missing-into', sql: 'MERGE t USING u ON t.id = u.id WHEN MATCHED THEN UPDATE SET a = 1', fn: 'SqlStmtList' },
   { name: 'neg-insert-missing-into', sql: 'INSERT t(a) VALUES (1)', fn: 'SqlStmtList' },
+  { name: 'neg-unicode-escape-surrogate', sql: "SELECT U&'\\D800' FROM t", fn: 'SqlStmtList' },
+  { name: 'neg-unicode-escape-out-of-range', sql: "SELECT U&'\\+110000' FROM t", fn: 'SqlStmtList' },
 ];
 
 if (require.main === module) {

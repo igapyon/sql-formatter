@@ -14,6 +14,152 @@ class CalciteLexer {
 
   tokenize() {
     const s = this.input;
+    const len = s.length;
+    const skipWhitespace = (p) => {
+      while (p < len && /\s/.test(s[p])) p++;
+      return p;
+    };
+    const isIdentStart = (ch) => {
+      return ch === "_" || ch === "$" || /\p{L}/u.test(ch);
+    };
+    const isIdentPart = (ch) => {
+      return ch === "_" || ch === "$" || /\p{L}|\p{Nd}/u.test(ch);
+    };
+    const startsWithKeywordAt = (p, keyword) => {
+      const slice = s.slice(p, p + keyword.length);
+      if (slice.toUpperCase() !== keyword) return false;
+      const next = s[p + keyword.length];
+      return !(next && /[A-Za-z0-9_]/.test(next));
+    };
+    const readQuotedString = (allowBackslashEscape = true) => {
+      const start = this.pos;
+      let value = "";
+      this.pos++;
+      while (this.pos < len) {
+        if (s[this.pos] === "'") {
+          if (s[this.pos + 1] === "'") {
+            value += "'";
+            this.pos += 2;
+            continue;
+          }
+          break;
+        }
+        if (allowBackslashEscape && s[this.pos] === "\\" && this.pos + 1 < len) {
+          value += s[this.pos + 1];
+          this.pos += 2;
+          continue;
+        }
+        value += s[this.pos++];
+      }
+      if (s[this.pos] === "'") this.pos++;
+      return { value, start, end: this.pos };
+    };
+    const readQuotedIdentifier = (quote) => {
+      const start = this.pos;
+      let value = "";
+      this.pos++;
+      while (this.pos < len) {
+        if (s[this.pos] === quote) {
+          if (s[this.pos + 1] === quote) {
+            value += quote;
+            this.pos += 2;
+            continue;
+          }
+          break;
+        }
+        value += s[this.pos++];
+      }
+      if (s[this.pos] === quote) this.pos++;
+      return { value, start, end: this.pos };
+    };
+    const readDoubleQuotedMaybeString = () => {
+      const start = this.pos;
+      let value = "";
+      let isString = false;
+      this.pos++;
+      while (this.pos < len) {
+        if (s[this.pos] === "\\") {
+          if (this.pos + 1 < len) {
+            value += s[this.pos + 1];
+            this.pos += 2;
+            isString = true;
+            continue;
+          }
+        }
+        if (s[this.pos] === "\"") {
+          if (s[this.pos + 1] === "\"") {
+            value += "\"";
+            this.pos += 2;
+            continue;
+          }
+          break;
+        }
+        value += s[this.pos++];
+      }
+      if (s[this.pos] === "\"") this.pos++;
+      return { value, start, end: this.pos, isString };
+    };
+    const tryReadBracketIdentifier = () => {
+      let p = this.pos + 1;
+      let value = "";
+      while (p < len) {
+        if (s[p] === "]") {
+          if (s[p + 1] === "]") {
+            value += "]";
+            p += 2;
+            continue;
+          }
+          break;
+        }
+        if (s[p] === "\n" || s[p] === "\r") return null;
+        value += s[p++];
+      }
+      if (s[p] !== "]") return null;
+      if (!value || !/^[A-Za-z_]/.test(value)) return null;
+      const start = this.pos;
+      this.pos = p + 1;
+      return { value, start, end: this.pos };
+    };
+    const decodeUnicodeEscapes = (raw, escapeChar) => {
+      let out = "";
+      for (let i = 0; i < raw.length; i++) {
+        const ch = raw[i];
+        if (ch !== escapeChar) {
+          out += ch;
+          continue;
+        }
+        const next = raw[i + 1];
+        if (next === escapeChar) {
+          out += escapeChar;
+          i++;
+          continue;
+        }
+        if (next === "+") {
+          const hex = raw.slice(i + 2, i + 8);
+          if (!/^[0-9A-Fa-f]{6}$/.test(hex)) {
+            throw new Error("Invalid Unicode escape sequence");
+          }
+          const code = parseInt(hex, 16);
+          if (code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF)) {
+            throw new Error("Invalid Unicode code point");
+          }
+          out += String.fromCodePoint(code);
+          i += 7;
+          continue;
+        }
+        const hex = raw.slice(i + 1, i + 5);
+        if (!/^[0-9A-Fa-f]{4}$/.test(hex)) {
+          throw new Error("Invalid Unicode escape sequence");
+        }
+        const code = parseInt(hex, 16);
+        if (code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF)) {
+          throw new Error("Invalid Unicode code point");
+        }
+        out += String.fromCodePoint(code);
+        i += 4;
+      }
+      return out;
+    };
     while (this.pos < s.length) {
       const ch = s[this.pos];
       if (/\s/.test(ch)) {
@@ -22,12 +168,17 @@ class CalciteLexer {
       }
       // line comment
       if (ch === "-" && s[this.pos + 1] === "-") {
+        const start = this.pos;
         this.pos += 2;
-        while (this.pos < s.length && s[this.pos] !== "\n") this.pos++;
+        let value = "";
+        while (this.pos < s.length && s[this.pos] !== "\n") {
+          value += s[this.pos++];
+        }
+        this.tokens.push({ type: "COMMENT_LINE", value: value.trim(), start, end: this.pos });
         continue;
       }
       // block comment
-      if (ch === "/" && s[this.pos + 1] === "*") {
+      if (ch === "/" && s[this.pos + 1] === "*" && s[this.pos + 2] !== "+") {
         this.pos += 2;
         while (this.pos < s.length && !(s[this.pos] === "*" && s[this.pos + 1] === "/")) {
           this.pos++;
@@ -35,50 +186,111 @@ class CalciteLexer {
         if (this.pos < s.length) this.pos += 2;
         continue;
       }
-      // strings (single-quoted, with simple escape handling)
-      if (ch === "'") {
+      // table hints (/*+ ... */)
+      if (ch === "/" && s[this.pos + 1] === "*" && s[this.pos + 2] === "+") {
         const start = this.pos;
+        this.pos += 3;
         let value = "";
-        this.pos++;
-        while (this.pos < s.length) {
-          if (s[this.pos] === "'") {
-            if (s[this.pos + 1] === "'") {
-              value += "'";
-              this.pos += 2;
-              continue;
-            }
-            break;
-          }
-          if (s[this.pos] === "\\" && this.pos + 1 < s.length) {
-            value += s[this.pos + 1];
-            this.pos += 2;
-            continue;
-          }
+        while (this.pos < s.length && !(s[this.pos] === "*" && s[this.pos + 1] === "/")) {
           value += s[this.pos++];
         }
-        if (s[this.pos] === "'") this.pos++;
-        this.tokens.push({ type: "STRING", value, start, end: this.pos });
+        if (this.pos < s.length) this.pos += 2;
+        this.tokens.push({ type: "HINT", value: value.trim(), start, end: this.pos });
         continue;
       }
-      // quoted identifiers
-      if (ch === '"' || ch === "`") {
-        const start = this.pos;
-        const quote = ch;
-        let value = "";
-        this.pos++;
-        while (this.pos < s.length) {
-          if (s[this.pos] === quote) {
-            if (s[this.pos + 1] === quote) {
-              value += quote;
-              this.pos += 2;
-              continue;
-            }
-            break;
+      // strings (single-quoted, with prefix/unicode/binary support)
+      if (ch === "'" || ((ch === "N" || ch === "n" || ch === "E" || ch === "e" || ch === "X" || ch === "x") && s[this.pos + 1] === "'") ||
+          ((ch === "U" || ch === "u") && s[this.pos + 1] === "&" && s[this.pos + 2] === "'") ||
+          (ch === "_" && /[A-Za-z0-9:._-]/.test(s[this.pos + 1]))) {
+        let start = this.pos;
+        let unicodeString = false;
+        let escapeChar = "\\";
+        if (ch === "N" || ch === "n" || ch === "E" || ch === "e" || ch === "X" || ch === "x") {
+          this.pos++;
+        } else if ((ch === "U" || ch === "u") && s[this.pos + 1] === "&") {
+          this.pos += 2;
+          unicodeString = true;
+        } else if (ch === "_") {
+          this.pos++;
+          while (this.pos < len && /[A-Za-z0-9:._-]/.test(s[this.pos])) {
+            this.pos++;
           }
-          value += s[this.pos++];
+          if (s[this.pos] !== "'") {
+            this.pos = start;
+          }
         }
-        if (s[this.pos] === quote) this.pos++;
+        if (s[this.pos] === "'") {
+          let literal = readQuotedString(!unicodeString);
+          let value = literal.value;
+          let p = skipWhitespace(this.pos);
+          while (s[p] === "'") {
+            this.pos = p;
+            const extra = readQuotedString(!unicodeString);
+            value += extra.value;
+            p = skipWhitespace(this.pos);
+          }
+          if (startsWithKeywordAt(p, "UESCAPE")) {
+            let q = skipWhitespace(p + "UESCAPE".length);
+            if (s[q] === "'") {
+              this.pos = q;
+              const esc = readQuotedString(false);
+              if (esc.value.length !== 1) {
+                throw new Error("UESCAPE must be a single character");
+              }
+              escapeChar = esc.value;
+              p = skipWhitespace(this.pos);
+            }
+          }
+          this.pos = p;
+          if (unicodeString) {
+            value = decodeUnicodeEscapes(value, escapeChar);
+          }
+          this.tokens.push({ type: "STRING", value, start, end: this.pos });
+          continue;
+        } else {
+          this.pos = start;
+        }
+      }
+      // quoted identifiers
+      if (ch === "[") {
+        const ident = tryReadBracketIdentifier();
+        if (ident) {
+          this.tokens.push({ type: "IDENT", value: ident.value, start: ident.start, end: ident.end });
+          continue;
+        }
+      }
+      if ((ch === "U" || ch === "u") && s[this.pos + 1] === "&" && s[this.pos + 2] === "\"") {
+        const start = this.pos;
+        this.pos += 2;
+        let { value, end } = readQuotedIdentifier("\"");
+        let p = skipWhitespace(this.pos);
+        let escapeChar = "\\";
+        if (startsWithKeywordAt(p, "UESCAPE")) {
+          let q = skipWhitespace(p + "UESCAPE".length);
+          if (s[q] !== "'") {
+            throw new Error("UESCAPE requires a quoted escape character");
+          }
+          this.pos = q;
+          const esc = readQuotedString(false);
+          if (esc.value.length !== 1) {
+            throw new Error("UESCAPE must be a single character");
+          }
+          escapeChar = esc.value;
+          p = skipWhitespace(this.pos);
+        }
+        this.pos = p;
+        value = decodeUnicodeEscapes(value, escapeChar);
         this.tokens.push({ type: "IDENT", value, start, end: this.pos });
+        continue;
+      }
+      if (ch === '"' || ch === "`") {
+        if (ch === "\"") {
+          const { value, start, end, isString } = readDoubleQuotedMaybeString();
+          this.tokens.push({ type: isString ? "STRING" : "IDENT", value, start, end });
+        } else {
+          const { value, start, end } = readQuotedIdentifier(ch);
+          this.tokens.push({ type: "IDENT", value, start, end });
+        }
         continue;
       }
       // numbers (including leading dot and exponent)
@@ -122,11 +334,22 @@ class CalciteLexer {
         continue;
       }
       // identifiers
-      if (/[A-Za-z_]/.test(ch)) {
+      if (isIdentStart(ch)) {
         const start = this.pos;
         let value = "";
-        while (this.pos < s.length && /[A-Za-z0-9_]/.test(s[this.pos])) {
-          value += s[this.pos++];
+        while (this.pos < s.length) {
+          const c = s[this.pos];
+          if (isIdentPart(c)) {
+            value += c;
+            this.pos++;
+            continue;
+          }
+          if (c === "-" && isIdentStart(s[this.pos + 1])) {
+            value += c;
+            this.pos++;
+            continue;
+          }
+          break;
         }
         this.tokens.push({ type: "IDENT", value, start, end: this.pos });
         continue;
@@ -152,9 +375,32 @@ class CalciteParser {
     this.tokens = tokens || [];
     this.pos = 0;
   }
-  peek() { return this.tokens[this.pos] || { type: "EOF", value: null }; }
-  peekN(n) { return this.tokens[this.pos + n] || { type: "EOF", value: null }; }
-  next() { return this.tokens[this.pos++] || { type: "EOF", value: null }; }
+  isCommentToken(t) { return t && t.type === "COMMENT_LINE"; }
+  peekRaw() { return this.tokens[this.pos] || { type: "EOF", value: null }; }
+  peek() {
+    let i = this.pos;
+    while (this.isCommentToken(this.tokens[i])) i++;
+    return this.tokens[i] || { type: "EOF", value: null };
+  }
+  peekN(n) {
+    let i = this.pos;
+    let count = 0;
+    while (i < this.tokens.length) {
+      const t = this.tokens[i];
+      if (!this.isCommentToken(t)) {
+        if (count === n) return t;
+        count++;
+      }
+      i++;
+    }
+    return { type: "EOF", value: null };
+  }
+  nextRaw() { return this.tokens[this.pos++] || { type: "EOF", value: null }; }
+  next() {
+    let t = this.nextRaw();
+    while (this.isCommentToken(t)) t = this.nextRaw();
+    return t || { type: "EOF", value: null };
+  }
   isEOF() { return this.peek().type === "EOF"; }
   isSymbol(value) {
     const t = this.peek();
@@ -264,12 +510,12 @@ class CalciteParser {
       "UNION", "INTERSECT", "EXCEPT",
       "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "ASOF", "NATURAL",
       "SET", "USING", "ON", "WHEN", "FOR",
-      "MATCH_RECOGNIZE",
+      "MATCH_RECOGNIZE", "MATCH_CONDITION", "PIVOT", "UNPIVOT", "TABLESAMPLE",
     ]);
     return keywords.has(value);
   }
   isTableHintsStart() {
-    return this.isSymbol("/") && this.isSymbolAt("*", 1) && this.isSymbolAt("+", 2);
+    return this.peek().type === "HINT";
   }
   expect(type) {
     const t = this.peek();
@@ -278,6 +524,39 @@ class CalciteParser {
     }
     return this.next();
   }
+  collectLineComments() {
+    const comments = [];
+    while (this.isCommentToken(this.peekRaw())) {
+      const t = this.nextRaw();
+      comments.push(t.value || "");
+    }
+    return comments;
+  }
+  ExpressionUntilKeyword(keyword) {
+    let depth = 0;
+    let idx = -1;
+    for (let i = this.pos; i < this.tokens.length; i++) {
+      const t = this.tokens[i];
+      if (t.type === "SYMBOL") {
+        if (t.value === "(" || t.value === "[" || t.value === "{") depth++;
+        else if (t.value === ")" || t.value === "]" || t.value === "}") depth = Math.max(0, depth - 1);
+      }
+      if (depth === 0 && t.type === "IDENT" && String(t.value).toUpperCase() === keyword) {
+        idx = i;
+        break;
+      }
+    }
+    if (idx === -1) {
+      throw new Error(`Expected keyword ${keyword} after expression`);
+    }
+    const subTokens = this.tokens.slice(this.pos, idx);
+    subTokens.push({ type: "EOF", value: null });
+    const subParser = new CalciteParser(subTokens);
+    const expr = subParser.Expression();
+    subParser.expect("EOF");
+    this.pos = idx;
+    return expr;
+  }
   notImplemented(rule) {
     const t = this.peek();
     throw new Error(`Not implemented: ${rule} at token ${t.type}`);
@@ -285,6 +564,7 @@ class CalciteParser {
 
   SqlStmtList() {
     const statements = [];
+    const leadingComments = this.collectLineComments();
     if (!this.isEOF()) {
       statements.push(this.SqlStmt());
       while (this.acceptSymbol(";")) {
@@ -293,7 +573,7 @@ class CalciteParser {
       }
     }
     this.expect("EOF");
-    return { type: "SqlStmtList", statements };
+    return { type: "SqlStmtList", leadingComments, statements };
   }
 
   SqlStmtEof() {
@@ -777,6 +1057,7 @@ class CalciteParser {
 
   SqlSelect() {
     this.expectKeyword("SELECT");
+    const selectComments = this.collectLineComments();
     let hints = null;
     if (this.isTableHintsStart()) {
       hints = this.TableHints();
@@ -818,6 +1099,7 @@ class CalciteParser {
     }
     return {
       type: "SqlSelect",
+      selectComments,
       hints,
       stream,
       setQuantifier,
@@ -1052,10 +1334,17 @@ class CalciteParser {
     const joinType = this.JoinType();
     const table = this.TableRef();
     let condition = null;
-    if (this.acceptKeyword("ON")) {
+    let matchCondition = null;
+    if (joinType === "ASOF JOIN" && this.acceptKeyword("MATCH_CONDITION")) {
+      matchCondition = this.ExpressionUntilKeyword("ON");
+      this.expectKeyword("ON");
       condition = { type: "On", expr: this.Expression() };
-    } else if (this.acceptKeyword("USING")) {
-      condition = { type: "Using", columns: this.ParenthesizedSimpleIdentifierList() };
+    } else {
+      if (this.acceptKeyword("ON")) {
+        condition = { type: "On", expr: this.Expression() };
+      } else if (this.acceptKeyword("USING")) {
+        condition = { type: "Using", columns: this.ParenthesizedSimpleIdentifierList() };
+      }
     }
     if (!natural && joinType !== "CROSS JOIN" && !condition) {
       throw new Error("JOIN requires ON or USING");
@@ -1063,7 +1352,10 @@ class CalciteParser {
     if (natural && condition) {
       throw new Error("NATURAL JOIN cannot use ON or USING");
     }
-    return { type: "JoinTable", natural, joinType, table, condition };
+    if (matchCondition && joinType !== "ASOF JOIN") {
+      throw new Error("MATCH_CONDITION is only valid for ASOF JOIN");
+    }
+    return { type: "JoinTable", natural, joinType, table, matchCondition, condition };
   }
 
   TableRef() {
@@ -1080,11 +1372,18 @@ class CalciteParser {
 
   TableRef3() {
     let base;
+    let hints = null;
+    let extend = null;
+    let over = null;
+    let snapshot = null;
+    let matchRecognize = null;
     if (this.acceptKeyword("LATERAL")) {
       if (this.isSymbol("(")) {
         this.expectSymbol("(");
         const query = this.OrderedQueryOrExpr();
         this.expectSymbol(")");
+        over = this.TableOverOpt();
+        if (this.isKeyword("MATCH_RECOGNIZE")) matchRecognize = this.MatchRecognize();
         base = { type: "LateralSubquery", query };
       } else if (this.acceptKeyword("UNNEST")) {
         this.expectSymbol("(");
@@ -1099,6 +1398,8 @@ class CalciteParser {
       this.expectSymbol("(");
       const query = this.OrderedQueryOrExpr();
       this.expectSymbol(")");
+      over = this.TableOverOpt();
+      if (this.isKeyword("MATCH_RECOGNIZE")) matchRecognize = this.MatchRecognize();
       base = { type: "Subquery", query };
     } else if (this.isKeyword("UNNEST")) {
       this.expectKeyword("UNNEST");
@@ -1123,6 +1424,17 @@ class CalciteParser {
         this.expectSymbol(")");
         base = { type: "ImplicitTableFunctionCall", name, args };
       } else {
+        if (this.isTableHintsStart()) {
+          hints = this.TableHints();
+        }
+        if (this.isKeyword("EXTEND")) {
+          extend = this.ExtendTable();
+        }
+        over = this.TableOverOpt();
+        if (this.isKeyword("FOR")) {
+          snapshot = this.Snapshot();
+        }
+        if (this.isKeyword("MATCH_RECOGNIZE")) matchRecognize = this.MatchRecognize();
         base = { type: "TableName", name };
       }
     } else {
@@ -1133,8 +1445,6 @@ class CalciteParser {
     if (this.isKeyword("PIVOT")) pivot = this.Pivot();
     let unpivot = null;
     if (this.isKeyword("UNPIVOT")) unpivot = this.Unpivot();
-    let matchRecognize = null;
-    if (this.isKeyword("MATCH_RECOGNIZE")) matchRecognize = this.MatchRecognize();
     // alias
     let alias = null;
     let columns = null;
@@ -1156,7 +1466,7 @@ class CalciteParser {
     if (this.isKeyword("TABLESAMPLE")) {
       tablesample = this.Tablesample();
     }
-    return { type: "TableRef", base, pivot, unpivot, matchRecognize, alias, columns, tablesample };
+    return { type: "TableRef", base, hints, extend, over, snapshot, matchRecognize, pivot, unpivot, alias, columns, tablesample };
   }
 
   Snapshot() {
@@ -2363,11 +2673,15 @@ class CalciteParser {
     const t = this.peek();
     if (t.type === "NUMBER") {
       this.next();
-      return { type: "UnsignedNumericLiteral", value: t.value };
+      const raw = String(t.value);
+      let kind = "INTEGER";
+      if (/[eE]/.test(raw)) kind = "APPROX";
+      else if (raw.includes(".")) kind = "DECIMAL";
+      return { type: "UnsignedNumericLiteral", kind, value: t.value };
     }
     if (this.acceptKeyword("DECIMAL")) {
       const literal = this.SimpleStringLiteral();
-      return { type: "UnsignedNumericLiteral", value: { type: "DECIMAL", literal } };
+      return { type: "UnsignedNumericLiteral", kind: "DECIMAL_STRING", value: { type: "DECIMAL", literal } };
     }
     throw new Error("Invalid UnsignedNumericLiteral");
   }
@@ -2680,15 +2994,12 @@ class CalciteParser {
   }
 
   TableHints() {
-    this.expectSymbol("/");
-    this.expectSymbol("*");
-    this.expectSymbol("+");
-    const hints = [this.AddHint()];
-    while (this.acceptSymbol(",")) {
-      hints.push(this.AddHint());
+    const t = this.peek();
+    if (t.type !== "HINT") {
+      throw new Error(`Expected HINT but got ${t.type}:${t.value}`);
     }
-    this.expectSymbol("*");
-    this.expectSymbol("/");
+    this.next();
+    const hints = t.value ? t.value.split(",").map((s) => s.trim()).filter(Boolean) : [];
     return { type: "TableHints", hints };
   }
 

@@ -52,7 +52,15 @@
         <section class="rounded-2xl bg-white/80 backdrop-blur p-4 shadow-lg">
           <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold">Formatted Output</h2>
-            <span id="status" class="text-xs text-slate-500">idle</span>
+            <div class="flex items-center gap-2">
+              <button id="copyBtn" class="rounded-full border border-slate-200 bg-white px-2.5 py-2 text-slate-700 hover:bg-slate-50" aria-label="Copy formatted output" title="Copy">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M9 9h10v10H9z" stroke="currentColor" stroke-width="1.6"/>
+                  <path d="M5 15V5h10" stroke="currentColor" stroke-width="1.6"/>
+                </svg>
+              </button>
+              <span id="status" class="text-xs text-slate-500">idle</span>
+            </div>
           </div>
           <pre id="formatOutput" class="mt-3 h-64 overflow-auto rounded-xl border border-slate-200 bg-slate-900 p-3 text-xs leading-5 text-slate-100">// formatted output will appear here</pre>
         </section>
@@ -70,12 +78,37 @@
     const status = document.getElementById('status');
     const parseBtn = document.getElementById('parseBtn');
     const formatBtn = document.getElementById('formatBtn');
+    const copyBtn = document.getElementById('copyBtn');
 
     const defaultSql = "SELECT a FROM t WHERE b = 1";
     input.value = defaultSql;
 
     function render(text) {
       output.textContent = text;
+    }
+
+    async function copyOutput() {
+      const text = output.textContent || '';
+      if (!text.trim()) {
+        status.textContent = 'empty';
+        return;
+      }
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const range = document.createRange();
+          range.selectNodeContents(output);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          document.execCommand('copy');
+          selection.removeAllRanges();
+        }
+        status.textContent = 'copied';
+      } catch (err) {
+        status.textContent = 'copy failed';
+      }
     }
 
     function parseSql() {
@@ -133,6 +166,7 @@
 
     parseBtn.addEventListener('click', parseSql);
     formatBtn.addEventListener('click', formatSql);
+    copyBtn.addEventListener('click', copyOutput);
     input.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') parseSql();
     });
@@ -270,9 +304,10 @@
     function renderOrderBy(node, ctx) {
       const items = node.list.items.map(it => renderOrderItem(it, ctx));
       if (items.length === 0) return 'ORDER BY';
-      const lines = [`ORDER BY ${items[0]}`];
+      const lines = ['ORDER BY'];
+      lines.push(`${indent(ctx, 1)}${items[0]}`);
       for (let i = 1; i < items.length; i++) {
-        lines.push(`${indent(ctx)}, ${items[i]}`);
+        lines.push(`${indent(ctx, 1)}, ${items[i]}`);
       }
       return lines.join('\n');
     }
@@ -325,21 +360,26 @@
 
     function renderSelect(node, ctx) {
       const lines = [];
-      lines.push('SELECT');
+      if (node.selectComments && node.selectComments.length > 0) {
+        lines.push(`SELECT -- ${node.selectComments.join(' ')}`);
+      } else {
+        lines.push('SELECT');
+      }
       const items = node.selectItems || [];
       items.forEach((item, idx) => {
         const prefix = idx === 0 ? indent(ctx, 1) : `${indent(ctx, 1)}, `;
         lines.push(prefix + renderSelectItem(item, { ...ctx, indent: ctx.indent + 1 }));
       });
       if (node.from) {
-        lines.push(`${indent(ctx)}FROM ${renderFrom(node.from, { ...ctx, indent: ctx.indent + 1 })}`);
+        lines.push(`${indent(ctx)}FROM`);
+        lines.push(`${indent(ctx, 1)}${renderFrom(node.from, { ...ctx, indent: ctx.indent + 1 })}`);
       }
       if (node.where) {
         lines.push(`${indent(ctx)}WHERE`);
         lines.push(`${indent(ctx, 1)}${formatNode(node.where.expr, { ...ctx, indent: ctx.indent + 1 })}`);
       }
       if (node.groupBy) {
-        lines.push(`${indent(ctx)}${renderGroupBy(node.groupBy, { ...ctx, indent: ctx.indent + 1 })}`);
+        lines.push(`${indent(ctx)}${renderGroupBy(node.groupBy, ctx)}`);
       }
       if (node.having) {
         lines.push(`${indent(ctx)}HAVING ${formatNode(node.having.expr, { ...ctx, indent: ctx.indent + 1 })}`);
@@ -349,7 +389,7 @@
         lines.push(`${indent(ctx, 1)}${formatNode(node.qualify.expr, { ...ctx, indent: ctx.indent + 1 })}`);
       }
       if (node.orderBy) {
-        lines.push(`${indent(ctx)}${renderOrderBy(node.orderBy, { ...ctx, indent: ctx.indent + 1 })}`);
+        lines.push(`${indent(ctx)}${renderOrderBy(node.orderBy, ctx)}`);
       }
       return lines.join('\n');
     }
@@ -401,7 +441,14 @@
       if (!node) return '';
       switch (node.type) {
         case 'SqlStmtList':
-          return node.statements.map(stmt => formatNode(stmt, ctx)).join('\n');
+          {
+            const lines = [];
+            if (node.leadingComments && node.leadingComments.length) {
+              node.leadingComments.forEach(c => lines.push(`-- ${c}`));
+            }
+            lines.push(...node.statements.map(stmt => formatNode(stmt, ctx)));
+            return lines.filter(Boolean).join('\n');
+          }
         case 'OrderedQueryOrExpr': {
           const withList = node.query.withList ? renderWithList(node.query.withList, ctx) : null;
           const base = renderQueryOrExpr(node.query, ctx);
@@ -426,6 +473,18 @@
           return formatNode(node.expr, ctx);
         case 'TableRef':
           return renderTableRef(node, ctx);
+        case 'Subquery': {
+          const inner = formatNode(node.query, { ...ctx, indent: 0 });
+          const pad = indent(ctx, 1);
+          const body = inner ? inner.split('\n').map(line => pad + line).join('\n') : pad;
+          return `(\n${body}\n${indent(ctx)})`;
+        }
+        case 'LateralSubquery': {
+          const inner = formatNode(node.query, { ...ctx, indent: 0 });
+          const pad = indent(ctx, 1);
+          const body = inner ? inner.split('\n').map(line => pad + line).join('\n') : pad;
+          return `LATERAL (\n${body}\n${indent(ctx)})`;
+        }
         case 'TableName':
           return formatNode(node.name, ctx);
         case 'CompoundTableIdentifier':
