@@ -4,7 +4,7 @@
 - Stage 1: lexer + 全 production skeleton 済み。
 - 入口/Select/From/Join/式/関数/型/JSON/日付系の主要骨格は実装済み。
 - md⇔js の production 名・順序は一致済み（ヘルパー除外で一致）。
-- 回帰テスト/異常系テストを追加済み（全 46 件通過）。
+- 回帰テスト/異常系テストを追加済み（全 169 件通過）。
 - lexer 実用化（コメント/文字列エスケープ/指数/引用識別子）対応済み。
 - 構文厳密化（FROM 必須/HAVING 制約/JOIN 条件/フレーム条件/ORDER+FETCH など）対応済み。
 
@@ -16,7 +16,15 @@
    - 省略可能要素の優先順位を整理（誤って別名に吸われる余地の洗い出し）
 3. テスト拡張（必要なら）
    - SETOP/ORDER/LIMIT の境界・エラー例を追加
-4. 厳格な突合（最終）
+4. 仕様(.md)と実装(.js)の差分反映
+   - TableRef 修飾子（TableHints/ExtendTable/TableOverOpt/Snapshot）の対応を整理
+   - ASOF JOIN の MATCH_CONDITION を仕様に合わせて反映
+   - lexer の識別子/文字列/数値トークン差分を解消
+     - HYPHENATED/BRACKET/BIG_QUERY 系識別子
+     - PREFIXED/UNICODE/BINARY/UESCAPE/連結文字列
+     - DECIMAL/APPROX 数値リテラル
+   - TableHints がコメントとして破棄されないよう lexer と整合
+5. 厳格な突合（最終）
    - apache-calcite-Parser.md を正とし、apache-calcite-Parser.js の整合を最終チェック。
    - 手順（最小）:
      1) .md から production 名一覧を抽出（順序付き）
