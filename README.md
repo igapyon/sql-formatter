@@ -17,7 +17,9 @@
 - `AST.md`: AST 仕様（暫定）
 - `FORMATTER_RULES.md`: SQL Formatter の出力ルール
 - `index-parser.html`: SQL → AST 出力の簡易デモ
-- `index.html`: SQL Formatter の UI（WIP）
+- `index.html`: SQL Formatter の UI
+- `sql-formatter.js`: SQL フォーマッター本体
+- `sql-formatter-test.js`: フォーマッターテスト
 
 ## 使い方（開発時）
 テストを実行してパーサーの動作確認ができます。
