@@ -144,6 +144,14 @@ const negativeCases = [
   { name: 'neg-where-without-from', sql: 'SELECT a WHERE a > 0', fn: 'SqlStmtList' },
   { name: 'neg-offset-without-order', sql: 'SELECT * FROM t OFFSET 1', fn: 'SqlStmtList' },
   { name: 'neg-setop-nonquery-left', sql: '1 UNION SELECT 1', fn: 'SqlStmtList' },
+  { name: 'neg-offset-without-order-2', sql: 'SELECT * FROM t OFFSET 1 ROW', fn: 'SqlStmtList' },
+  { name: 'neg-join-using-nonlist', sql: 'SELECT * FROM a JOIN b USING id', fn: 'SqlStmtList' },
+  { name: 'neg-having-before-group', sql: 'SELECT a FROM t HAVING a > 0 GROUP BY a', fn: 'SqlStmtList' },
+  { name: 'neg-window-before-group', sql: 'SELECT a FROM t WINDOW w AS (PARTITION BY a) GROUP BY a', fn: 'SqlStmtList' },
+  { name: 'neg-fetch-without-only', sql: 'SELECT * FROM t ORDER BY a FETCH FIRST 1 ROW', fn: 'SqlStmtList' },
+  { name: 'neg-limit-comma', sql: 'SELECT * FROM t LIMIT , 10', fn: 'SqlStmtList' },
+  { name: 'neg-explain-missing-for', sql: 'EXPLAIN PLAN SELECT 1', fn: 'SqlStmtList' },
+  { name: 'neg-describe-missing-target', sql: 'DESCRIBE', fn: 'SqlStmtList' },
 ];
 
 if (require.main === module) {
