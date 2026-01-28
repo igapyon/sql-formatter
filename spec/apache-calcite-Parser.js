@@ -656,6 +656,16 @@ class CalciteParser {
     while (this.isKeyword("UNION") || this.isKeyword("INTERSECT") || this.isKeyword("EXCEPT")) {
       setOps.push(this.AddSetOpQuery());
     }
+    if (setOps.length > 0) {
+      const isQueryLeaf =
+        leaf &&
+        (leaf.type === "SqlSelect" ||
+          leaf.type === "TableConstructor" ||
+          leaf.type === "ExplicitTable");
+      if (!isQueryLeaf) {
+        throw new Error("SETOP requires query operands");
+      }
+    }
     return { type: "QueryOrExpr", withList, leaf, setOps };
   }
 
@@ -2470,7 +2480,7 @@ class CalciteParser {
 
   AddSetOpQuery() {
     const op = this.BinaryQueryOperator();
-    const right = this.LeafQueryOrExpr();
+    const right = this.LeafQuery();
     return { type: "AddSetOpQuery", op, right };
   }
 
