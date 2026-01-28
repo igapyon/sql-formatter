@@ -15,6 +15,7 @@
 - `spec/apache-calcite-Parser.md`: 仕様（EBNFベース）
 - `spec/apache-calcite-Parser.jj`: 参照文法
 - `AST.md`: AST 仕様（暫定）
+- `FORMATTER_RULES.md`: SQL Formatter の出力ルール
 - `index-parser.html`: SQL → AST 出力の簡易デモ
 - `index.html`: SQL Formatter の UI（WIP）
 
