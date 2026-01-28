@@ -16,6 +16,7 @@
 - `spec/apache-calcite-Parser.jj`: 参照文法
 - `AST.md`: AST 仕様（暫定）
 - `index-parser.html`: SQL → AST 出力の簡易デモ
+- `index.html`: SQL Formatter の UI（WIP）
 
 ## 使い方（開発時）
 テストを実行してパーサーの動作確認ができます。
