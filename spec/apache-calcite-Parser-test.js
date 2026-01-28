@@ -52,6 +52,8 @@ const cases = [
   { name: 'lexer-string-unicode', sql: "SELECT U&'d\\\\0061' UESCAPE '\\\\' FROM t", fn: 'SqlStmtList' },
   { name: 'lexer-number-exponent', sql: 'SELECT 1.2e-3 FROM t', fn: 'SqlStmtList' },
   { name: 'lexer-number-leading-dot', sql: 'SELECT .5 FROM t', fn: 'SqlStmtList' },
+  { name: 'lexer-number-approx', sql: 'SELECT 1E+10 FROM t', fn: 'SqlStmtList' },
+  { name: 'lexer-number-decimal-dot', sql: 'SELECT 1. FROM t', fn: 'SqlStmtList' },
   // DDL / DCL
   { name: 'ddl-set', sql: 'SET foo = 1', fn: 'SqlStmtList' },
   { name: 'ddl-reset', sql: 'RESET foo', fn: 'SqlStmtList' },

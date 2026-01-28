@@ -2579,11 +2579,15 @@ class CalciteParser {
     const t = this.peek();
     if (t.type === "NUMBER") {
       this.next();
-      return { type: "UnsignedNumericLiteral", value: t.value };
+      const raw = String(t.value);
+      let kind = "INTEGER";
+      if (/[eE]/.test(raw)) kind = "APPROX";
+      else if (raw.includes(".")) kind = "DECIMAL";
+      return { type: "UnsignedNumericLiteral", kind, value: t.value };
     }
     if (this.acceptKeyword("DECIMAL")) {
       const literal = this.SimpleStringLiteral();
-      return { type: "UnsignedNumericLiteral", value: { type: "DECIMAL", literal } };
+      return { type: "UnsignedNumericLiteral", kind: "DECIMAL_STRING", value: { type: "DECIMAL", literal } };
     }
     throw new Error("Invalid UnsignedNumericLiteral");
   }
