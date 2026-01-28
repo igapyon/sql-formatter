@@ -25,6 +25,21 @@ WHERE b = 1`,
     sql: "SELECT -- keep comment\n  a\nFROM t",
     expectIncludes: ['SELECT -- keep comment'],
   },
+  {
+    name: 'nested-subquery',
+    sql: 'SELECT u.name FROM (SELECT id, name FROM users WHERE active = 1) AS u',
+    expect: `SELECT
+    u.name
+FROM
+    (
+        SELECT
+            id
+            , name
+        FROM
+            users
+        WHERE active = 1
+    ) u`,
+  },
 ];
 
 let failed = 0;

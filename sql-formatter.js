@@ -14,7 +14,14 @@ function renderNode(node, ctx) {
   if (!node) return '';
   switch (node.type) {
     case 'SqlStmtList':
-      return node.statements.map(stmt => renderNode(stmt, ctx)).join('\n');
+      {
+        const lines = [];
+        if (node.leadingComments && node.leadingComments.length) {
+          node.leadingComments.forEach(c => lines.push(`-- ${c}`));
+        }
+        lines.push(...node.statements.map(stmt => renderNode(stmt, ctx)));
+        return lines.filter(Boolean).join('\n');
+      }
     case 'OrderedQueryOrExpr': {
       const withList = node.query && node.query.withList ? renderNode(node.query.withList, ctx) : null;
       const base = node.query ? renderNode(node.query, ctx) : '';
@@ -35,6 +42,18 @@ function renderNode(node, ctx) {
       return renderNode(node.expr, ctx);
     case 'TableRef':
       return renderTableRef(node, ctx);
+    case 'Subquery': {
+      const inner = renderNode(node.query, { ...ctx, indent: 0 });
+      const pad = indent(ctx, 1);
+      const body = inner ? inner.split('\n').map(line => pad + line).join('\n') : pad;
+      return `(\n${body}\n${indent(ctx)})`;
+    }
+    case 'LateralSubquery': {
+      const inner = renderNode(node.query, { ...ctx, indent: 0 });
+      const pad = indent(ctx, 1);
+      const body = inner ? inner.split('\n').map(line => pad + line).join('\n') : pad;
+      return `LATERAL (\n${body}\n${indent(ctx)})`;
+    }
     case 'TableName':
       return renderNode(node.name, ctx);
     case 'CompoundTableIdentifier':
@@ -91,7 +110,11 @@ function renderNode(node, ctx) {
 
 function renderSelect(node, ctx) {
   const lines = [];
-  lines.push('SELECT');
+  if (node.selectComments && node.selectComments.length > 0) {
+    lines.push(`SELECT -- ${node.selectComments.join(' ')}`);
+  } else {
+    lines.push('SELECT');
+  }
   const items = node.selectItems || [];
   items.forEach((item, idx) => {
     const prefix = idx === 0 ? indent(ctx, 1) : `${indent(ctx, 1)}, `;
