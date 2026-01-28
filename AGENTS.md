@@ -10,7 +10,7 @@
 - `spec/apache-calcite-Parser.js`: lexer + parser 本体
 - `spec/apache-calcite-Parser-test.js`: 回帰/異常系テスト
 - `spec/apache-calcite-Parser.md`: 仕様（EBNFベース）
-- `index.html`: SQL → AST 出力の簡易デモ
+- `index-parser.html`: SQL → AST 出力の簡易デモ
 
 ## 作業の基本方針
 - `.md` と `.js` の production 名は一致させる
