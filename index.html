@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SQL Formatter (WIP)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-1: #f6f2ea;
+      --bg-2: #efe7db;
+      --ink: #1b1b1b;
+    }
+    html, body { height: 100%; }
+    body { font-family: "Space Grotesk", system-ui, sans-serif; color: var(--ink); }
+    .paper {
+      background: linear-gradient(120deg, var(--bg-1), var(--bg-2));
+    }
+    .grid {
+      background-image:
+        linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+  </style>
+</head>
+<body class="paper grid">
+  <div class="min-h-screen px-6 py-10">
+    <div class="mx-auto max-w-5xl">
+      <header class="mb-8">
+        <h1 class="text-3xl md:text-5xl font-bold tracking-tight">SQL Formatter (WIP)</h1>
+        <p class="mt-2 text-base md:text-lg text-slate-700">
+          ここは SQL Formatter の UI を実装予定のページです。現在はプレースホルダー。
+        </p>
+      </header>
+
+      <div class="grid gap-6 md:grid-cols-[1fr_1fr]">
+        <section class="rounded-2xl bg-white/80 backdrop-blur p-4 shadow-lg">
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold">SQL Input</h2>
+            <div class="flex items-center gap-2">
+              <button id="parseBtn" class="rounded-full bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800">Parse → AST</button>
+              <button id="formatBtn" class="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Format</button>
+            </div>
+          </div>
+          <textarea id="sqlInput" class="mt-3 h-64 w-full resize-none rounded-xl border border-slate-200 bg-white p-3 text-sm leading-6 outline-none focus:border-teal-600" spellcheck="false" placeholder="SQL を入力してください（Formatter は未実装）"></textarea>
+        </section>
+
+        <section class="rounded-2xl bg-white/80 backdrop-blur p-4 shadow-lg">
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold">Formatted Output</h2>
+            <div class="flex items-center gap-2">
+              <button id="copyBtn" class="rounded-full border border-slate-200 bg-white px-2.5 py-2 text-slate-700 hover:bg-slate-50" aria-label="Copy formatted output" title="Copy">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M9 9h10v10H9z" stroke="currentColor" stroke-width="1.6"/>
+                  <path d="M5 15V5h10" stroke="currentColor" stroke-width="1.6"/>
+                </svg>
+              </button>
+              <span id="status" class="text-xs text-slate-500">idle</span>
+            </div>
+          </div>
+          <pre id="formatOutput" class="mt-3 h-64 overflow-auto rounded-xl border border-slate-200 bg-slate-900 p-3 text-xs leading-5 text-slate-100">// formatted output will appear here</pre>
+        </section>
+      </div>
+
+      <footer class="mt-8 text-xs text-slate-600">
+        <p>AST デモは <code>index-parser.html</code> を参照してください。</p>
+      </footer>
+    </div>
+  </div>
+  <script src="./spec/apache-calcite-Parser.js"></script>
+  <script>
+    const input = document.getElementById('sqlInput');
+    const output = document.getElementById('formatOutput');
+    const status = document.getElementById('status');
+    const parseBtn = document.getElementById('parseBtn');
+    const formatBtn = document.getElementById('formatBtn');
+    const copyBtn = document.getElementById('copyBtn');
+
+    const defaultSql = "SELECT a FROM t WHERE b = 1";
+    input.value = defaultSql;
+
+    function render(text) {
+      output.textContent = text;
+    }
+
+    async function copyOutput() {
+      const text = output.textContent || '';
+      if (!text.trim()) {
+        status.textContent = 'empty';
+        return;
+      }
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          const range = document.createRange();
+          range.selectNodeContents(output);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          document.execCommand('copy');
+          selection.removeAllRanges();
+        }
+        status.textContent = 'copied';
+      } catch (err) {
+        status.textContent = 'copy failed';
+      }
+    }
+
+    function parseSql() {
+      const sql = input.value.trim();
+      if (!sql) {
+        output.textContent = '';
+        status.textContent = 'empty';
+        return;
+      }
+      try {
+        const lexer = new window.CalciteLexer(sql);
+        const tokens = lexer.tokenize();
+        const parser = new window.CalciteParser(tokens);
+        const ast = parser.SqlStmtList();
+        status.textContent = `ok (pos: ${parser.pos})`;
+        render(JSON.stringify(ast, null, 2));
+      } catch (err) {
+        status.textContent = 'error';
+        render(JSON.stringify({ error: String(err.message || err) }, null, 2));
+      }
+    }
+
+    function formatSql() {
+      const sql = input.value.trim();
+      if (!sql) {
+        output.textContent = '';
+        status.textContent = 'empty';
+        return;
+      }
+      try {
+        const lexer = new window.CalciteLexer(sql);
+        const tokens = lexer.tokenize();
+        const parser = new window.CalciteParser(tokens);
+        const ast = parser.SqlStmtList();
+        const ctx = { indent: 0, unsupported: false };
+        const formatted = formatNode(ast, ctx).trim();
+        if (ctx.unsupported) {
+          status.textContent = `fallback (pos: ${parser.pos})`;
+          render(sql);
+        } else {
+          status.textContent = `ok (pos: ${parser.pos})`;
+          let withComments = formatted;
+          try {
+            withComments = injectComments(sql, formatted) || formatted;
+          } catch (_e) {
+            withComments = formatted;
+          }
+          render(withComments);
+        }
+      } catch (err) {
+        status.textContent = 'error';
+        render(String(err.message || err));
+      }
+    }
+
+    parseBtn.addEventListener('click', parseSql);
+    formatBtn.addEventListener('click', formatSql);
+    copyBtn.addEventListener('click', copyOutput);
+    input.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') parseSql();
+    });
+
+    parseSql();
+
+    function indent(ctx, extra = 0) {
+      return ' '.repeat((ctx.indent + extra) * 4);
+    }
+
+    function renderBinaryOp(op) {
+      if (!op) return '';
+      if (typeof op === 'string') return op;
+      return op.op || '';
+    }
+
+    function renderLogical(node, ctx, op) {
+      const parts = [];
+      const walk = (n) => {
+        if (n && n.type === 'BinaryExpression' && renderBinaryOp(n.operator) === op) {
+          walk(n.left);
+          walk(n.right);
+        } else {
+          parts.push(formatNode(n, ctx));
+        }
+      };
+      walk(node);
+      if (parts.length === 0) return '';
+      return parts.map((p, i) => (i === 0 ? p : `${indent(ctx)}${op} ${p}`)).join('\n');
+    }
+
+    function injectComments(originalSql, formatted) {
+      if (!formatted) return formatted;
+      const srcLines = originalSql.split('\n');
+      const commentBlocks = [];
+      let current = null;
+      for (let i = 0; i < srcLines.length; i++) {
+        const trimmed = srcLines[i].trim();
+        if (trimmed.startsWith('--')) {
+          if (!current) current = { start: i, lines: [] };
+          current.lines.push(trimmed);
+          continue;
+        }
+        if (current) {
+          commentBlocks.push(current);
+          current = null;
+        }
+      }
+      if (current) commentBlocks.push(current);
+      if (commentBlocks.length === 0) return formatted;
+
+      const formattedLines = formatted.split('\n');
+      const withIndices = [];
+      for (let i = 0; i < formattedLines.length; i++) {
+        if (formattedLines[i].trim().startsWith('WITH')) {
+          withIndices.push(i);
+        }
+      }
+      const cteLines = [];
+      for (let i = 0; i < formattedLines.length; i++) {
+        if (/^\s*,\s*\w+\s+AS\s+\(/.test(formattedLines[i])) {
+          cteLines.push(i);
+        } else if (/^\s*\w+\s+AS\s+\(/.test(formattedLines[i]) && i > 0 && formattedLines[i - 1].trim().startsWith('WITH')) {
+          cteLines.push(i);
+        }
+      }
+      if (cteLines.length === 0) return formatted;
+
+      const inserts = new Map();
+      let cteIndex = 0;
+      for (const block of commentBlocks) {
+        if (cteIndex >= cteLines.length) break;
+        const lineIndex = cteLines[cteIndex++];
+        const existing = inserts.get(lineIndex) || [];
+        const indented = block.lines.map(line => `${indent({ indent: 0 }, 1)}${line}`);
+        inserts.set(lineIndex, existing.concat(indented));
+      }
+      // any remaining comment blocks: append at end
+      if (cteIndex < commentBlocks.length) {
+        const tail = [];
+        for (let i = cteIndex; i < commentBlocks.length; i++) {
+          tail.push(...commentBlocks[i].lines.map(line => `${indent({ indent: 0 }, 1)}${line}`));
+        }
+        const existing = inserts.get(formattedLines.length) || [];
+        inserts.set(formattedLines.length, existing.concat(tail));
+      }
+      if (inserts.size === 0) return formatted;
+
+      const out = [];
+      for (let i = 0; i < formattedLines.length; i++) {
+        if (inserts.has(i)) {
+          out.push(...inserts.get(i));
+        }
+        out.push(formattedLines[i]);
+      }
+      if (inserts.has(formattedLines.length)) {
+        out.push(...inserts.get(formattedLines.length));
+      }
+      return out.join('\n');
+    }
+
+    function renderExpression2b(node, ctx) {
+      const base = formatNode(node.base, ctx);
+      if (node.extensions && node.extensions.length > 0) {
+        ctx.unsupported = true;
+        return base;
+      }
+      if (node.prefixes && node.prefixes.length > 0) {
+        return `${node.prefixes.join(' ')} ${base}`;
+      }
+      return base;
+    }
+
+    function renderWindowSpec(node, ctx) {
+      const parts = [];
+      if (node.name) {
+        parts.push(node.name.value || node.name.name || node.name);
+      }
+      if (node.partitionBy) {
+        const exprs = node.partitionBy.expressions.map(e => formatNode(e, ctx)).join(', ');
+        parts.push(`PARTITION BY ${exprs}`);
+      }
+      if (node.orderBy) {
+        parts.push(renderOrderBy(node.orderBy, ctx));
+      }
+      return `(${parts.join(' ')})`;
+    }
+
+    function renderOrderItem(node, ctx) {
+      const expr = formatNode(node.expr, ctx);
+      const dir = node.direction ? ` ${node.direction}` : '';
+      return `${expr}${dir}`;
+    }
+
+    function renderOrderBy(node, ctx) {
+      const items = node.list.items.map(it => renderOrderItem(it, ctx));
+      if (items.length === 0) return 'ORDER BY';
+      const lines = ['ORDER BY'];
+      lines.push(`${indent(ctx, 1)}${items[0]}`);
+      for (let i = 1; i < items.length; i++) {
+        lines.push(`${indent(ctx, 1)}, ${items[i]}`);
+      }
+      return lines.join('\n');
+    }
+
+    function renderGroupBy(node, ctx) {
+      const items = node.list.items.map(it => formatNode(it, ctx));
+      if (items.length === 0) return 'GROUP BY';
+      const lines = ['GROUP BY'];
+      lines.push(`${indent(ctx, 1)}${items[0]}`);
+      for (let i = 1; i < items.length; i++) {
+        lines.push(`${indent(ctx, 1)}, ${items[i]}`);
+      }
+      return lines.join('\n');
+    }
+
+    function renderFrom(node, ctx) {
+      const base = formatNode(node.first, ctx);
+      const joins = (node.joins || []).map(j => formatNode(j, ctx));
+      return [base, ...joins].join('\n' + indent(ctx));
+    }
+
+    function renderTableRef(node, ctx) {
+      const base = node.base ? formatNode(node.base, ctx) : '[TableRef]';
+      const alias = node.alias ? (node.alias.value || node.alias.name || node.alias) : null;
+      return alias ? `${base} ${alias}` : base;
+    }
+
+    function renderJoin(node, ctx) {
+      const base = `${node.joinType} ${formatNode(node.table, ctx)}`;
+      if (!node.condition) return base;
+      if (node.condition.type === 'On') {
+        const expr = formatNode(node.condition.expr, { ...ctx, indent: ctx.indent + 1 });
+        return `${base}\n${indent(ctx, 1)}ON ${expr}`;
+      }
+      if (node.condition.type === 'Using') {
+        const cols = node.condition.columns.items.map(c => c.value || c.name).join(', ');
+        return `${base}\n${indent(ctx, 1)}USING (${cols})`;
+      }
+      return base;
+    }
+
+    function renderSelectItem(node, ctx) {
+      const expr = formatNode(node.expr, ctx);
+      if (node.alias) {
+        const alias = node.alias.value || node.alias.name || node.alias;
+        return `${expr} AS ${alias}`;
+      }
+      return expr;
+    }
+
+    function renderSelect(node, ctx) {
+      const lines = [];
+      if (node.selectComments && node.selectComments.length > 0) {
+        lines.push(`SELECT -- ${node.selectComments.join(' ')}`);
+      } else {
+        lines.push('SELECT');
+      }
+      const items = node.selectItems || [];
+      items.forEach((item, idx) => {
+        const prefix = idx === 0 ? indent(ctx, 1) : `${indent(ctx, 1)}, `;
+        lines.push(prefix + renderSelectItem(item, { ...ctx, indent: ctx.indent + 1 }));
+      });
+      if (node.from) {
+        lines.push(`${indent(ctx)}FROM`);
+        lines.push(`${indent(ctx, 1)}${renderFrom(node.from, { ...ctx, indent: ctx.indent + 1 })}`);
+      }
+      if (node.where) {
+        lines.push(`${indent(ctx)}WHERE`);
+        lines.push(`${indent(ctx, 1)}${formatNode(node.where.expr, { ...ctx, indent: ctx.indent + 1 })}`);
+      }
+      if (node.groupBy) {
+        lines.push(`${indent(ctx)}${renderGroupBy(node.groupBy, ctx)}`);
+      }
+      if (node.having) {
+        lines.push(`${indent(ctx)}HAVING ${formatNode(node.having.expr, { ...ctx, indent: ctx.indent + 1 })}`);
+      }
+      if (node.qualify) {
+        lines.push(`${indent(ctx)}QUALIFY`);
+        lines.push(`${indent(ctx, 1)}${formatNode(node.qualify.expr, { ...ctx, indent: ctx.indent + 1 })}`);
+      }
+      if (node.orderBy) {
+        lines.push(`${indent(ctx)}${renderOrderBy(node.orderBy, ctx)}`);
+      }
+      return lines.join('\n');
+    }
+
+    function renderOrderByLimitOpt(opt, ctx) {
+      if (!opt) return [];
+      const lines = [];
+      if (opt.orderBy) {
+        lines.push(`${indent(ctx)}${renderOrderBy(opt.orderBy, ctx)}`);
+      }
+      if (opt.limit) {
+        lines.push(`${indent(ctx)}LIMIT ${formatNode(opt.limit.value, ctx)}`);
+      }
+      if (opt.offset) {
+        lines.push(`${indent(ctx)}OFFSET ${formatNode(opt.offset.value, ctx)}`);
+      }
+      if (opt.fetch) {
+        lines.push(`${indent(ctx)}FETCH ${opt.fetch.mode} ${formatNode(opt.fetch.value, ctx)} ${opt.fetch.rows} ONLY`);
+      }
+      return lines;
+    }
+
+    function renderQueryOrExpr(node, ctx) {
+      const base = formatNode(node.leaf, ctx);
+      if (!node.setOps || node.setOps.length === 0) return base;
+      const lines = [base];
+      node.setOps.forEach((s) => {
+        const op = `${s.op.kind}${s.op.quantifier ? ' ' + s.op.quantifier : ''}`;
+        lines.push(`${op} ${formatNode(s.right, ctx)}`);
+      });
+      return lines.join('\n');
+    }
+
+    function renderWithList(node, ctx) {
+      const items = node.items || [];
+      const lines = [];
+      lines.push(`WITH${node.recursive ? ' RECURSIVE' : ''}`);
+      items.forEach((item, idx) => {
+        const name = formatNode(item.name, ctx);
+        const cols = item.columns ? ` (${item.columns.items.map(c => c.value || c.name).join(', ')})` : '';
+        const query = formatNode(item.query, { ...ctx, indent: ctx.indent + 1 });
+        const prefix = idx === 0 ? indent(ctx, 1) : `${indent(ctx, 1)}, `;
+        lines.push(`${prefix}${name}${cols} AS ${query}`);
+      });
+      return lines.join('\n');
+    }
+
+    function formatNode(node, ctx) {
+      if (!node) return '';
+      switch (node.type) {
+        case 'SqlStmtList':
+          {
+            const lines = [];
+            if (node.leadingComments && node.leadingComments.length) {
+              node.leadingComments.forEach(c => lines.push(`-- ${c}`));
+            }
+            lines.push(...node.statements.map(stmt => formatNode(stmt, ctx)));
+            return lines.filter(Boolean).join('\n');
+          }
+        case 'OrderedQueryOrExpr': {
+          const withList = node.query.withList ? renderWithList(node.query.withList, ctx) : null;
+          const base = renderQueryOrExpr(node.query, ctx);
+          const lines = [];
+          if (withList) lines.push(withList);
+          lines.push(base);
+          lines.push(...renderOrderByLimitOpt(node.orderByLimitOpt, ctx));
+          return lines.filter(Boolean).join('\n');
+        }
+        case 'QueryOrExpr':
+          return renderQueryOrExpr(node, ctx);
+        case 'SqlSelect':
+          return renderSelect(node, ctx);
+        case 'WithList':
+          return renderWithList(node, ctx);
+        case 'AddWithItem':
+          return formatNode(node, ctx);
+        case 'AddSelectItem':
+          return renderSelectItem(node, ctx);
+        case 'SelectExpression':
+          if (node.star) return '*';
+          return formatNode(node.expr, ctx);
+        case 'TableRef':
+          return renderTableRef(node, ctx);
+        case 'Subquery': {
+          const inner = formatNode(node.query, { ...ctx, indent: 0 });
+          const pad = indent(ctx, 1);
+          const body = inner ? inner.split('\n').map(line => pad + line).join('\n') : pad;
+          return `(\n${body}\n${indent(ctx)})`;
+        }
+        case 'LateralSubquery': {
+          const inner = formatNode(node.query, { ...ctx, indent: 0 });
+          const pad = indent(ctx, 1);
+          const body = inner ? inner.split('\n').map(line => pad + line).join('\n') : pad;
+          return `LATERAL (\n${body}\n${indent(ctx)})`;
+        }
+        case 'TableName':
+          return formatNode(node.name, ctx);
+        case 'CompoundTableIdentifier':
+          return node.parts.map(p => (p.type === 'Identifier' ? (p.value || p.name) : '*')).join('.');
+        case 'ExplicitTable':
+          return `TABLE ${formatNode(node.name, ctx)}`;
+        case 'TableConstructor':
+          return `${node.kind} ${node.rows.map(r => formatNode(r, ctx)).join(', ')}`;
+        case 'FromClause':
+          return renderFrom(node, ctx);
+        case 'JoinTable':
+          return renderJoin(node, ctx);
+        case 'CommaJoin':
+          return `, ${formatNode(node.table, ctx)}`;
+        case 'OrderBy':
+          return renderOrderBy(node, ctx);
+        case 'GroupBy':
+          return renderGroupBy(node, ctx);
+        case 'OrderItemList':
+          return node.items.map(it => renderOrderItem(it, ctx)).join('\n');
+        case 'AddOrderItem':
+          return renderOrderItem(node, ctx);
+        case 'GroupingElementList':
+          return node.items.map(it => formatNode(it, ctx)).join('\n');
+        case 'AddGroupingElement':
+          if (node.kind === 'EXPR') return formatNode(node.expr, ctx);
+          if (node.list) return formatNode(node.list, ctx);
+          ctx.unsupported = true;
+          return '';
+        case 'StringLiteral':
+          return `'${node.value}'`;
+        case 'NumericLiteral':
+          if (node.value && typeof node.value === 'object' && node.value.value !== undefined) {
+            return String(node.value.value);
+          }
+          return String(node.value);
+        case 'UnsignedNumericLiteral':
+          return String(node.value);
+        case 'Literal':
+          return String(node.value);
+        case 'Identifier':
+          return node.value || node.name;
+        case 'CompoundIdentifier':
+          return node.parts.map(p => (p.type === 'Identifier' ? (p.value || p.name) : '*')).join('.');
+        case 'ParenthesizedExpression':
+          return `(${formatNode(node.node, ctx)})`;
+        case 'ParenExpression':
+          return `(${formatNode(node.node, ctx)})`;
+        case 'Arg': {
+          const expr = formatNode(node.expr, ctx);
+          if (node.name) {
+            const name = node.name.value || node.name.name || node.name;
+            return `${name} => ${expr}`;
+          }
+          return expr;
+        }
+        case 'NamedFunctionCall': {
+          const call = node.namedCall || null;
+          if (!call || !call.name) {
+            ctx.unsupported = true;
+            return '';
+          }
+          const name = formatNode(call.name, ctx);
+          let args = '';
+          if (call.callType === 'EMPTY') {
+            args = '';
+          } else if (call.callType === 'STAR') {
+            args = '*';
+          } else if (call.callType === 'PARAMS') {
+            args = call.params ? formatNode(call.params, ctx) : '';
+          } else {
+            ctx.unsupported = true;
+          }
+          let text = `${name}(${args})`;
+          if (node.over) {
+            if (node.over.type === 'WindowSpecification') {
+              text += ` OVER ${renderWindowSpec(node.over, ctx)}`;
+            } else {
+              text += ` OVER ${formatNode(node.over, ctx)}`;
+            }
+          }
+          return text;
+        }
+        case 'FunctionParameterList':
+          return (node.args || []).map(a => formatNode(a, ctx)).join(', ');
+        case 'ExpressionCommaList':
+          return node.expressions.map(e => formatNode(e, ctx)).join(', ');
+        case 'WindowSpecification':
+          return renderWindowSpec(node, ctx);
+        case 'Expression2b':
+          return renderExpression2b(node, ctx);
+        case 'BinaryExpression': {
+          const op = renderBinaryOp(node.operator);
+          if (op === 'AND' || op === 'OR') {
+            return renderLogical(node, ctx, op);
+          }
+          return `${formatNode(node.left, ctx)} ${op} ${formatNode(node.right, ctx)}`;
+        }
+        default:
+          ctx.unsupported = true;
+          return '';
+      }
+    }
+  </script>
+</body>
+</html>

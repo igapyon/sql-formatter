@@ -14,53 +14,358 @@ class CalciteLexer {
 
   tokenize() {
     const s = this.input;
+    const len = s.length;
+    const skipWhitespace = (p) => {
+      while (p < len && /\s/.test(s[p])) p++;
+      return p;
+    };
+    const isIdentStart = (ch) => {
+      return ch === "_" || ch === "$" || /\p{L}/u.test(ch);
+    };
+    const isIdentPart = (ch) => {
+      return ch === "_" || ch === "$" || /\p{L}|\p{Nd}/u.test(ch);
+    };
+    const startsWithKeywordAt = (p, keyword) => {
+      const slice = s.slice(p, p + keyword.length);
+      if (slice.toUpperCase() !== keyword) return false;
+      const next = s[p + keyword.length];
+      return !(next && /[A-Za-z0-9_]/.test(next));
+    };
+    const readQuotedString = (allowBackslashEscape = true) => {
+      const start = this.pos;
+      let value = "";
+      this.pos++;
+      while (this.pos < len) {
+        if (s[this.pos] === "'") {
+          if (s[this.pos + 1] === "'") {
+            value += "'";
+            this.pos += 2;
+            continue;
+          }
+          break;
+        }
+        if (allowBackslashEscape && s[this.pos] === "\\" && this.pos + 1 < len) {
+          value += s[this.pos + 1];
+          this.pos += 2;
+          continue;
+        }
+        value += s[this.pos++];
+      }
+      if (s[this.pos] === "'") this.pos++;
+      return { value, start, end: this.pos };
+    };
+    const readQuotedIdentifier = (quote) => {
+      const start = this.pos;
+      let value = "";
+      this.pos++;
+      while (this.pos < len) {
+        if (s[this.pos] === quote) {
+          if (s[this.pos + 1] === quote) {
+            value += quote;
+            this.pos += 2;
+            continue;
+          }
+          break;
+        }
+        value += s[this.pos++];
+      }
+      if (s[this.pos] === quote) this.pos++;
+      return { value, start, end: this.pos };
+    };
+    const readDoubleQuotedMaybeString = () => {
+      const start = this.pos;
+      let value = "";
+      let isString = false;
+      this.pos++;
+      while (this.pos < len) {
+        if (s[this.pos] === "\\") {
+          if (this.pos + 1 < len) {
+            value += s[this.pos + 1];
+            this.pos += 2;
+            isString = true;
+            continue;
+          }
+        }
+        if (s[this.pos] === "\"") {
+          if (s[this.pos + 1] === "\"") {
+            value += "\"";
+            this.pos += 2;
+            continue;
+          }
+          break;
+        }
+        value += s[this.pos++];
+      }
+      if (s[this.pos] === "\"") this.pos++;
+      return { value, start, end: this.pos, isString };
+    };
+    const tryReadBracketIdentifier = () => {
+      let p = this.pos + 1;
+      let value = "";
+      while (p < len) {
+        if (s[p] === "]") {
+          if (s[p + 1] === "]") {
+            value += "]";
+            p += 2;
+            continue;
+          }
+          break;
+        }
+        if (s[p] === "\n" || s[p] === "\r") return null;
+        value += s[p++];
+      }
+      if (s[p] !== "]") return null;
+      if (!value || !/^[A-Za-z_]/.test(value)) return null;
+      const start = this.pos;
+      this.pos = p + 1;
+      return { value, start, end: this.pos };
+    };
+    const decodeUnicodeEscapes = (raw, escapeChar) => {
+      let out = "";
+      for (let i = 0; i < raw.length; i++) {
+        const ch = raw[i];
+        if (ch !== escapeChar) {
+          out += ch;
+          continue;
+        }
+        const next = raw[i + 1];
+        if (next === escapeChar) {
+          out += escapeChar;
+          i++;
+          continue;
+        }
+        if (next === "+") {
+          const hex = raw.slice(i + 2, i + 8);
+          if (!/^[0-9A-Fa-f]{6}$/.test(hex)) {
+            throw new Error("Invalid Unicode escape sequence");
+          }
+          const code = parseInt(hex, 16);
+          if (code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF)) {
+            throw new Error("Invalid Unicode code point");
+          }
+          out += String.fromCodePoint(code);
+          i += 7;
+          continue;
+        }
+        const hex = raw.slice(i + 1, i + 5);
+        if (!/^[0-9A-Fa-f]{4}$/.test(hex)) {
+          throw new Error("Invalid Unicode escape sequence");
+        }
+        const code = parseInt(hex, 16);
+        if (code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF)) {
+          throw new Error("Invalid Unicode code point");
+        }
+        out += String.fromCodePoint(code);
+        i += 4;
+      }
+      return out;
+    };
     while (this.pos < s.length) {
       const ch = s[this.pos];
       if (/\s/.test(ch)) {
         this.pos++;
         continue;
       }
-      // strings (single-quoted, no escape handling)
-      if (ch === "'") {
+      // line comment
+      if (ch === "-" && s[this.pos + 1] === "-") {
+        const start = this.pos;
+        this.pos += 2;
         let value = "";
-        this.pos++;
-        while (this.pos < s.length && s[this.pos] !== "'") {
+        while (this.pos < s.length && s[this.pos] !== "\n") {
           value += s[this.pos++];
         }
-        this.pos++;
-        this.tokens.push({ type: "STRING", value });
+        this.tokens.push({ type: "COMMENT_LINE", value: value.trim(), start, end: this.pos });
         continue;
       }
-      // numbers
-      if (/[0-9]/.test(ch)) {
+      // block comment
+      if (ch === "/" && s[this.pos + 1] === "*" && s[this.pos + 2] !== "+") {
+        this.pos += 2;
+        while (this.pos < s.length && !(s[this.pos] === "*" && s[this.pos + 1] === "/")) {
+          this.pos++;
+        }
+        if (this.pos < s.length) this.pos += 2;
+        continue;
+      }
+      // table hints (/*+ ... */)
+      if (ch === "/" && s[this.pos + 1] === "*" && s[this.pos + 2] === "+") {
+        const start = this.pos;
+        this.pos += 3;
         let value = "";
-        while (this.pos < s.length && /[0-9\.]/.test(s[this.pos])) {
+        while (this.pos < s.length && !(s[this.pos] === "*" && s[this.pos + 1] === "/")) {
           value += s[this.pos++];
         }
-        this.tokens.push({ type: "NUMBER", value });
+        if (this.pos < s.length) this.pos += 2;
+        this.tokens.push({ type: "HINT", value: value.trim(), start, end: this.pos });
+        continue;
+      }
+      // strings (single-quoted, with prefix/unicode/binary support)
+      if (ch === "'" || ((ch === "N" || ch === "n" || ch === "E" || ch === "e" || ch === "X" || ch === "x") && s[this.pos + 1] === "'") ||
+          ((ch === "U" || ch === "u") && s[this.pos + 1] === "&" && s[this.pos + 2] === "'") ||
+          (ch === "_" && /[A-Za-z0-9:._-]/.test(s[this.pos + 1]))) {
+        let start = this.pos;
+        let unicodeString = false;
+        let escapeChar = "\\";
+        if (ch === "N" || ch === "n" || ch === "E" || ch === "e" || ch === "X" || ch === "x") {
+          this.pos++;
+        } else if ((ch === "U" || ch === "u") && s[this.pos + 1] === "&") {
+          this.pos += 2;
+          unicodeString = true;
+        } else if (ch === "_") {
+          this.pos++;
+          while (this.pos < len && /[A-Za-z0-9:._-]/.test(s[this.pos])) {
+            this.pos++;
+          }
+          if (s[this.pos] !== "'") {
+            this.pos = start;
+          }
+        }
+        if (s[this.pos] === "'") {
+          let literal = readQuotedString(!unicodeString);
+          let value = literal.value;
+          let p = skipWhitespace(this.pos);
+          while (s[p] === "'") {
+            this.pos = p;
+            const extra = readQuotedString(!unicodeString);
+            value += extra.value;
+            p = skipWhitespace(this.pos);
+          }
+          if (startsWithKeywordAt(p, "UESCAPE")) {
+            let q = skipWhitespace(p + "UESCAPE".length);
+            if (s[q] === "'") {
+              this.pos = q;
+              const esc = readQuotedString(false);
+              if (esc.value.length !== 1) {
+                throw new Error("UESCAPE must be a single character");
+              }
+              escapeChar = esc.value;
+              p = skipWhitespace(this.pos);
+            }
+          }
+          this.pos = p;
+          if (unicodeString) {
+            value = decodeUnicodeEscapes(value, escapeChar);
+          }
+          this.tokens.push({ type: "STRING", value, start, end: this.pos });
+          continue;
+        } else {
+          this.pos = start;
+        }
+      }
+      // quoted identifiers
+      if (ch === "[") {
+        const ident = tryReadBracketIdentifier();
+        if (ident) {
+          this.tokens.push({ type: "IDENT", value: ident.value, start: ident.start, end: ident.end });
+          continue;
+        }
+      }
+      if ((ch === "U" || ch === "u") && s[this.pos + 1] === "&" && s[this.pos + 2] === "\"") {
+        const start = this.pos;
+        this.pos += 2;
+        let { value, end } = readQuotedIdentifier("\"");
+        let p = skipWhitespace(this.pos);
+        let escapeChar = "\\";
+        if (startsWithKeywordAt(p, "UESCAPE")) {
+          let q = skipWhitespace(p + "UESCAPE".length);
+          if (s[q] !== "'") {
+            throw new Error("UESCAPE requires a quoted escape character");
+          }
+          this.pos = q;
+          const esc = readQuotedString(false);
+          if (esc.value.length !== 1) {
+            throw new Error("UESCAPE must be a single character");
+          }
+          escapeChar = esc.value;
+          p = skipWhitespace(this.pos);
+        }
+        this.pos = p;
+        value = decodeUnicodeEscapes(value, escapeChar);
+        this.tokens.push({ type: "IDENT", value, start, end: this.pos });
+        continue;
+      }
+      if (ch === '"' || ch === "`") {
+        if (ch === "\"") {
+          const { value, start, end, isString } = readDoubleQuotedMaybeString();
+          this.tokens.push({ type: isString ? "STRING" : "IDENT", value, start, end });
+        } else {
+          const { value, start, end } = readQuotedIdentifier(ch);
+          this.tokens.push({ type: "IDENT", value, start, end });
+        }
+        continue;
+      }
+      // numbers (including leading dot and exponent)
+      if (/[0-9]/.test(ch) || (ch === "." && /[0-9]/.test(s[this.pos + 1]))) {
+        const start = this.pos;
+        let value = "";
+        if (ch === ".") {
+          value += ".";
+          this.pos++;
+          while (this.pos < s.length && /[0-9]/.test(s[this.pos])) {
+            value += s[this.pos++];
+          }
+        } else {
+          while (this.pos < s.length && /[0-9]/.test(s[this.pos])) {
+            value += s[this.pos++];
+          }
+          if (s[this.pos] === ".") {
+            value += ".";
+            this.pos++;
+            while (this.pos < s.length && /[0-9]/.test(s[this.pos])) {
+              value += s[this.pos++];
+            }
+          }
+        }
+        if (/[eE]/.test(s[this.pos])) {
+          const e = s[this.pos];
+          const sign = s[this.pos + 1];
+          if (/[0-9\+\-]/.test(sign) && /[0-9]/.test(s[this.pos + 2] || "")) {
+            value += e;
+            this.pos++;
+            if (sign === "+" || sign === "-") {
+              value += sign;
+              this.pos++;
+            }
+            while (this.pos < s.length && /[0-9]/.test(s[this.pos])) {
+              value += s[this.pos++];
+            }
+          }
+        }
+        this.tokens.push({ type: "NUMBER", value, start, end: this.pos });
         continue;
       }
       // identifiers
-      if (/[A-Za-z_]/.test(ch)) {
+      if (isIdentStart(ch)) {
+        const start = this.pos;
         let value = "";
-        while (this.pos < s.length && /[A-Za-z0-9_]/.test(s[this.pos])) {
-          value += s[this.pos++];
+        while (this.pos < s.length) {
+          const c = s[this.pos];
+          if (isIdentPart(c)) {
+            value += c;
+            this.pos++;
+            continue;
+          }
+          if (c === "-" && isIdentStart(s[this.pos + 1])) {
+            value += c;
+            this.pos++;
+            continue;
+          }
+          break;
         }
-        this.tokens.push({ type: "IDENT", value });
+        this.tokens.push({ type: "IDENT", value, start, end: this.pos });
         continue;
       }
       // symbols (two-char first)
       const two = s.slice(this.pos, this.pos + 2);
       const twoOps = ["<=", ">=", "<>", "!=", "||", "::", "->", ":="];
       if (twoOps.includes(two)) {
-        this.tokens.push({ type: "SYMBOL", value: two });
+        this.tokens.push({ type: "SYMBOL", value: two, start: this.pos, end: this.pos + 2 });
         this.pos += 2;
         continue;
       }
-      this.tokens.push({ type: "SYMBOL", value: ch });
+      this.tokens.push({ type: "SYMBOL", value: ch, start: this.pos, end: this.pos + 1 });
       this.pos++;
     }
-    this.tokens.push({ type: "EOF", value: null });
+    this.tokens.push({ type: "EOF", value: null, start: this.pos, end: this.pos });
     return this.tokens;
   }
 }
@@ -70,9 +375,32 @@ class CalciteParser {
     this.tokens = tokens || [];
     this.pos = 0;
   }
-  peek() { return this.tokens[this.pos] || { type: "EOF", value: null }; }
-  peekN(n) { return this.tokens[this.pos + n] || { type: "EOF", value: null }; }
-  next() { return this.tokens[this.pos++] || { type: "EOF", value: null }; }
+  isCommentToken(t) { return t && t.type === "COMMENT_LINE"; }
+  peekRaw() { return this.tokens[this.pos] || { type: "EOF", value: null }; }
+  peek() {
+    let i = this.pos;
+    while (this.isCommentToken(this.tokens[i])) i++;
+    return this.tokens[i] || { type: "EOF", value: null };
+  }
+  peekN(n) {
+    let i = this.pos;
+    let count = 0;
+    while (i < this.tokens.length) {
+      const t = this.tokens[i];
+      if (!this.isCommentToken(t)) {
+        if (count === n) return t;
+        count++;
+      }
+      i++;
+    }
+    return { type: "EOF", value: null };
+  }
+  nextRaw() { return this.tokens[this.pos++] || { type: "EOF", value: null }; }
+  next() {
+    let t = this.nextRaw();
+    while (this.isCommentToken(t)) t = this.nextRaw();
+    return t || { type: "EOF", value: null };
+  }
   isEOF() { return this.peek().type === "EOF"; }
   isSymbol(value) {
     const t = this.peek();
@@ -180,13 +508,14 @@ class CalciteParser {
     const keywords = new Set([
       "FROM", "WHERE", "GROUP", "HAVING", "WINDOW", "QUALIFY", "ORDER", "LIMIT", "OFFSET", "FETCH",
       "UNION", "INTERSECT", "EXCEPT",
-      "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "ASOF",
-      "SET", "USING", "ON", "WHEN",
+      "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "ASOF", "NATURAL",
+      "SET", "USING", "ON", "WHEN", "FOR",
+      "MATCH_RECOGNIZE", "MATCH_CONDITION", "PIVOT", "UNPIVOT", "TABLESAMPLE",
     ]);
     return keywords.has(value);
   }
   isTableHintsStart() {
-    return this.isSymbol("/") && this.isSymbolAt("*", 1) && this.isSymbolAt("+", 2);
+    return this.peek().type === "HINT";
   }
   expect(type) {
     const t = this.peek();
@@ -195,6 +524,39 @@ class CalciteParser {
     }
     return this.next();
   }
+  collectLineComments() {
+    const comments = [];
+    while (this.isCommentToken(this.peekRaw())) {
+      const t = this.nextRaw();
+      comments.push(t.value || "");
+    }
+    return comments;
+  }
+  ExpressionUntilKeyword(keyword) {
+    let depth = 0;
+    let idx = -1;
+    for (let i = this.pos; i < this.tokens.length; i++) {
+      const t = this.tokens[i];
+      if (t.type === "SYMBOL") {
+        if (t.value === "(" || t.value === "[" || t.value === "{") depth++;
+        else if (t.value === ")" || t.value === "]" || t.value === "}") depth = Math.max(0, depth - 1);
+      }
+      if (depth === 0 && t.type === "IDENT" && String(t.value).toUpperCase() === keyword) {
+        idx = i;
+        break;
+      }
+    }
+    if (idx === -1) {
+      throw new Error(`Expected keyword ${keyword} after expression`);
+    }
+    const subTokens = this.tokens.slice(this.pos, idx);
+    subTokens.push({ type: "EOF", value: null });
+    const subParser = new CalciteParser(subTokens);
+    const expr = subParser.Expression();
+    subParser.expect("EOF");
+    this.pos = idx;
+    return expr;
+  }
   notImplemented(rule) {
     const t = this.peek();
     throw new Error(`Not implemented: ${rule} at token ${t.type}`);
@@ -202,6 +564,7 @@ class CalciteParser {
 
   SqlStmtList() {
     const statements = [];
+    const leadingComments = this.collectLineComments();
     if (!this.isEOF()) {
       statements.push(this.SqlStmt());
       while (this.acceptSymbol(";")) {
@@ -210,7 +573,7 @@ class CalciteParser {
       }
     }
     this.expect("EOF");
-    return { type: "SqlStmtList", statements };
+    return { type: "SqlStmtList", leadingComments, statements };
   }
 
   SqlStmtEof() {
@@ -397,6 +760,22 @@ class CalciteParser {
     if (this.isSymbol("(")) {
       columns = this.ParenthesizedCompoundIdentifierList();
     }
+    const isSourceStart =
+      this.isKeyword("WITH") ||
+      this.isKeyword("SELECT") ||
+      this.isKeyword("VALUES") ||
+      this.isKeyword("VALUE") ||
+      this.isKeyword("TABLE") ||
+      (this.isSymbol("(") && (
+        this.isKeywordAt("WITH", 1) ||
+        this.isKeywordAt("SELECT", 1) ||
+        this.isKeywordAt("VALUES", 1) ||
+        this.isKeywordAt("VALUE", 1) ||
+        this.isKeywordAt("TABLE", 1)
+      ));
+    if (!isSourceStart) {
+      throw new Error("Invalid INSERT source");
+    }
     const source = this.OrderedQueryOrExpr();
     return { type: "SqlInsert", mode, keywords, table, hints, extend, columns, source };
   }
@@ -557,6 +936,16 @@ class CalciteParser {
     while (this.isKeyword("UNION") || this.isKeyword("INTERSECT") || this.isKeyword("EXCEPT")) {
       setOps.push(this.AddSetOpQuery());
     }
+    if (setOps.length > 0) {
+      const isQueryLeaf =
+        leaf &&
+        (leaf.type === "SqlSelect" ||
+          leaf.type === "TableConstructor" ||
+          leaf.type === "ExplicitTable");
+      if (!isQueryLeaf) {
+        throw new Error("SETOP requires query operands");
+      }
+    }
     return { type: "QueryOrExpr", withList, leaf, setOps };
   }
 
@@ -579,6 +968,15 @@ class CalciteParser {
       }
     } else if (this.isKeyword("FETCH")) {
       fetch = this.FetchClause();
+    }
+    if (offset && !orderBy) {
+      throw new Error("OFFSET requires ORDER BY");
+    }
+    if (fetch && !orderBy) {
+      throw new Error("FETCH requires ORDER BY");
+    }
+    if (limit && fetch) {
+      throw new Error("LIMIT and FETCH cannot be combined");
     }
     return { type: "OrderByLimitOpt", orderBy, limit, offset, fetch };
   }
@@ -659,6 +1057,7 @@ class CalciteParser {
 
   SqlSelect() {
     this.expectKeyword("SELECT");
+    const selectComments = this.collectLineComments();
     let hints = null;
     if (this.isTableHintsStart()) {
       hints = this.TableHints();
@@ -670,6 +1069,13 @@ class CalciteParser {
     const selectItems = [this.AddSelectItem()];
     while (this.acceptSymbol(",")) {
       selectItems.push(this.AddSelectItem());
+    }
+    if (!this.isKeyword("FROM")) {
+      if (this.isKeyword("WHERE") || this.isKeyword("GROUP") || this.isKeyword("HAVING") ||
+          this.isKeyword("WINDOW") || this.isKeyword("QUALIFY")) {
+        const t = this.peek();
+        throw new Error(`Expected FROM before ${String(t.value).toUpperCase()}`);
+      }
     }
     let from = null;
     let where = null;
@@ -685,8 +1091,15 @@ class CalciteParser {
       if (this.isKeyword("WINDOW")) window = this.Window();
       if (this.isKeyword("QUALIFY")) qualify = this.Qualify();
     }
+    if (having && !groupBy) {
+      throw new Error("HAVING requires GROUP BY");
+    }
+    if (qualify && !from) {
+      throw new Error("QUALIFY requires FROM");
+    }
     return {
       type: "SqlSelect",
+      selectComments,
       hints,
       stream,
       setQuantifier,
@@ -718,7 +1131,17 @@ class CalciteParser {
   WindowSpecification() {
     this.expectSymbol("(");
     let name = null;
-    if (this.peek().type === "IDENT") {
+    if (
+      this.peek().type === "IDENT" &&
+      !this.isKeyword("PARTITION") &&
+      !this.isKeyword("ORDER") &&
+      !this.isKeyword("ROWS") &&
+      !this.isKeyword("RANGE") &&
+      !this.isKeyword("GROUPS") &&
+      !this.isKeyword("EXCLUDE") &&
+      !this.isKeyword("ALLOW") &&
+      !this.isKeyword("DISALLOW")
+    ) {
       name = this.SimpleIdentifier();
     }
     let partitionBy = null;
@@ -744,6 +1167,9 @@ class CalciteParser {
       }
       const exclusion = this.WindowExclusion();
       frame.exclusion = exclusion;
+    }
+    if (frame && !orderBy) {
+      throw new Error("Window frame requires ORDER BY");
     }
     let partial = null;
     if (this.acceptKeyword("ALLOW") || this.acceptKeyword("DISALLOW")) {
@@ -908,12 +1334,28 @@ class CalciteParser {
     const joinType = this.JoinType();
     const table = this.TableRef();
     let condition = null;
-    if (this.acceptKeyword("ON")) {
+    let matchCondition = null;
+    if (joinType === "ASOF JOIN" && this.acceptKeyword("MATCH_CONDITION")) {
+      matchCondition = this.ExpressionUntilKeyword("ON");
+      this.expectKeyword("ON");
       condition = { type: "On", expr: this.Expression() };
-    } else if (this.acceptKeyword("USING")) {
-      condition = { type: "Using", columns: this.ParenthesizedSimpleIdentifierList() };
+    } else {
+      if (this.acceptKeyword("ON")) {
+        condition = { type: "On", expr: this.Expression() };
+      } else if (this.acceptKeyword("USING")) {
+        condition = { type: "Using", columns: this.ParenthesizedSimpleIdentifierList() };
+      }
     }
-    return { type: "JoinTable", natural, joinType, table, condition };
+    if (!natural && joinType !== "CROSS JOIN" && !condition) {
+      throw new Error("JOIN requires ON or USING");
+    }
+    if (natural && condition) {
+      throw new Error("NATURAL JOIN cannot use ON or USING");
+    }
+    if (matchCondition && joinType !== "ASOF JOIN") {
+      throw new Error("MATCH_CONDITION is only valid for ASOF JOIN");
+    }
+    return { type: "JoinTable", natural, joinType, table, matchCondition, condition };
   }
 
   TableRef() {
@@ -930,11 +1372,18 @@ class CalciteParser {
 
   TableRef3() {
     let base;
+    let hints = null;
+    let extend = null;
+    let over = null;
+    let snapshot = null;
+    let matchRecognize = null;
     if (this.acceptKeyword("LATERAL")) {
       if (this.isSymbol("(")) {
         this.expectSymbol("(");
         const query = this.OrderedQueryOrExpr();
         this.expectSymbol(")");
+        over = this.TableOverOpt();
+        if (this.isKeyword("MATCH_RECOGNIZE")) matchRecognize = this.MatchRecognize();
         base = { type: "LateralSubquery", query };
       } else if (this.acceptKeyword("UNNEST")) {
         this.expectSymbol("(");
@@ -949,6 +1398,8 @@ class CalciteParser {
       this.expectSymbol("(");
       const query = this.OrderedQueryOrExpr();
       this.expectSymbol(")");
+      over = this.TableOverOpt();
+      if (this.isKeyword("MATCH_RECOGNIZE")) matchRecognize = this.MatchRecognize();
       base = { type: "Subquery", query };
     } else if (this.isKeyword("UNNEST")) {
       this.expectKeyword("UNNEST");
@@ -973,6 +1424,17 @@ class CalciteParser {
         this.expectSymbol(")");
         base = { type: "ImplicitTableFunctionCall", name, args };
       } else {
+        if (this.isTableHintsStart()) {
+          hints = this.TableHints();
+        }
+        if (this.isKeyword("EXTEND")) {
+          extend = this.ExtendTable();
+        }
+        over = this.TableOverOpt();
+        if (this.isKeyword("FOR")) {
+          snapshot = this.Snapshot();
+        }
+        if (this.isKeyword("MATCH_RECOGNIZE")) matchRecognize = this.MatchRecognize();
         base = { type: "TableName", name };
       }
     } else {
@@ -991,7 +1453,10 @@ class CalciteParser {
       if (this.isSymbol("(")) {
         columns = this.ParenthesizedSimpleIdentifierList();
       }
-    } else if (this.peek().type === "IDENT") {
+    } else if (
+      this.peek().type === "IDENT" &&
+      !this.isClauseKeyword(String(this.peek().value).toUpperCase())
+    ) {
       alias = this.SimpleIdentifier();
       if (this.isSymbol("(")) {
         columns = this.ParenthesizedSimpleIdentifierList();
@@ -1001,7 +1466,7 @@ class CalciteParser {
     if (this.isKeyword("TABLESAMPLE")) {
       tablesample = this.Tablesample();
     }
-    return { type: "TableRef", base, pivot, unpivot, alias, columns, tablesample };
+    return { type: "TableRef", base, hints, extend, over, snapshot, matchRecognize, pivot, unpivot, alias, columns, tablesample };
   }
 
   Snapshot() {
@@ -2208,11 +2673,15 @@ class CalciteParser {
     const t = this.peek();
     if (t.type === "NUMBER") {
       this.next();
-      return { type: "UnsignedNumericLiteral", value: t.value };
+      const raw = String(t.value);
+      let kind = "INTEGER";
+      if (/[eE]/.test(raw)) kind = "APPROX";
+      else if (raw.includes(".")) kind = "DECIMAL";
+      return { type: "UnsignedNumericLiteral", kind, value: t.value };
     }
     if (this.acceptKeyword("DECIMAL")) {
       const literal = this.SimpleStringLiteral();
-      return { type: "UnsignedNumericLiteral", value: { type: "DECIMAL", literal } };
+      return { type: "UnsignedNumericLiteral", kind: "DECIMAL_STRING", value: { type: "DECIMAL", literal } };
     }
     throw new Error("Invalid UnsignedNumericLiteral");
   }
@@ -2328,7 +2797,7 @@ class CalciteParser {
 
   AddSetOpQuery() {
     const op = this.BinaryQueryOperator();
-    const right = this.LeafQueryOrExpr();
+    const right = this.LeafQuery();
     return { type: "AddSetOpQuery", op, right };
   }
 
@@ -2525,15 +2994,12 @@ class CalciteParser {
   }
 
   TableHints() {
-    this.expectSymbol("/");
-    this.expectSymbol("*");
-    this.expectSymbol("+");
-    const hints = [this.AddHint()];
-    while (this.acceptSymbol(",")) {
-      hints.push(this.AddHint());
+    const t = this.peek();
+    if (t.type !== "HINT") {
+      throw new Error(`Expected HINT but got ${t.type}:${t.value}`);
     }
-    this.expectSymbol("*");
-    this.expectSymbol("/");
+    this.next();
+    const hints = t.value ? t.value.split(",").map((s) => s.trim()).filter(Boolean) : [];
     return { type: "TableHints", hints };
   }
 
@@ -3359,6 +3825,7 @@ class CalciteParser {
 
   PatternFactor() {
     const primary = this.PatternPrimary();
+    if (!primary) return null;
     let quantifier = null;
     if (this.acceptSymbol("*")) quantifier = { kind: "*" };
     else if (this.acceptSymbol("+")) quantifier = { kind: "+" };
@@ -3944,34 +4411,13 @@ class CalciteParser {
 
 }
 
-module.exports = {
-  CalciteLexer,
-  CalciteParser,
-};
-
-if (require.main === module) {
-  const samples = [
-    "SELECT 1",
-    "SELECT /*+ index(t) */ a AS x FROM t WHERE a IS NOT DISTINCT FROM b",
-    "WITH t AS (SELECT 1) SELECT * FROM t",
-    "EXPLAIN PLAN FOR SELECT 1",
-    "INSERT INTO t(a) VALUES (1)",
-    "UPDATE t SET a = 1 WHERE b = 2",
-    "DELETE FROM t WHERE a IN (1,2,3)",
-    "MERGE INTO t USING u ON t.id = u.id WHEN MATCHED THEN UPDATE SET a = 1",
-    "SELECT ARRAY_AGG(x) FROM t",
-    "SELECT JSON_VALUE(doc, '$.a' RETURNING VARCHAR) FROM t",
-    "SELECT DATE_DIFF(d1, d2, DAY) FROM t",
-  ];
-  for (const src of samples) {
-    const lexer = new CalciteLexer(src);
-    const tokens = lexer.tokenize();
-    const parser = new CalciteParser(tokens);
-    try {
-      parser.SqlStmtList();
-      console.log(`OK: ${src}`);
-    } catch (e) {
-      console.error(`NG: ${src} -> ${e.message}`);
-    }
-  }
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    CalciteLexer,
+    CalciteParser,
+  };
+}
+if (typeof window !== "undefined") {
+  window.CalciteLexer = CalciteLexer;
+  window.CalciteParser = CalciteParser;
 }
