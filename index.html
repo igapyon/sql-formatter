@@ -426,6 +426,18 @@
           return formatNode(node.expr, ctx);
         case 'TableRef':
           return renderTableRef(node, ctx);
+        case 'Subquery': {
+          const inner = formatNode(node.query, { ...ctx, indent: ctx.indent + 1 });
+          const pad = indent(ctx, 1);
+          const body = inner ? inner.split('\n').map(line => pad + line).join('\n') : pad;
+          return `(\n${body}\n${indent(ctx)})`;
+        }
+        case 'LateralSubquery': {
+          const inner = formatNode(node.query, { ...ctx, indent: ctx.indent + 1 });
+          const pad = indent(ctx, 1);
+          const body = inner ? inner.split('\n').map(line => pad + line).join('\n') : pad;
+          return `LATERAL (\n${body}\n${indent(ctx)})`;
+        }
         case 'TableName':
           return formatNode(node.name, ctx);
         case 'CompoundTableIdentifier':

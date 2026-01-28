@@ -19,6 +19,12 @@ class CalciteLexer {
       while (p < len && /\s/.test(s[p])) p++;
       return p;
     };
+    const isIdentStart = (ch) => {
+      return ch === "_" || ch === "$" || /\p{L}/u.test(ch);
+    };
+    const isIdentPart = (ch) => {
+      return ch === "_" || ch === "$" || /\p{L}|\p{Nd}/u.test(ch);
+    };
     const startsWithKeywordAt = (p, keyword) => {
       const slice = s.slice(p, p + keyword.length);
       if (slice.toUpperCase() !== keyword) return false;
@@ -323,17 +329,17 @@ class CalciteLexer {
         continue;
       }
       // identifiers
-      if (/[A-Za-z_]/.test(ch)) {
+      if (isIdentStart(ch)) {
         const start = this.pos;
         let value = "";
         while (this.pos < s.length) {
           const c = s[this.pos];
-          if (/[A-Za-z0-9_]/.test(c)) {
+          if (isIdentPart(c)) {
             value += c;
             this.pos++;
             continue;
           }
-          if (c === "-" && /[A-Za-z_]/.test(s[this.pos + 1])) {
+          if (c === "-" && isIdentStart(s[this.pos + 1])) {
             value += c;
             this.pos++;
             continue;
