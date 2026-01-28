@@ -18,7 +18,8 @@ FROM
     a
 FROM
     t
-WHERE b = 1`,
+WHERE
+    b = 1`,
   },
   {
     name: 'select-line-comment',
@@ -37,7 +38,8 @@ FROM
             , name
         FROM
             users
-        WHERE active = 1
+        WHERE
+            active = 1
     ) u`,
   },
 ];
