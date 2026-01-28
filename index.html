@@ -245,6 +245,10 @@
           return formatNode(node.expr, ctx);
         case 'TableRef':
           return node.base ? formatNode(node.base, ctx) : '[TableRef]';
+        case 'TableName':
+          return formatNode(node.name, ctx);
+        case 'CompoundTableIdentifier':
+          return node.parts.map(p => (p.type === 'Identifier' ? (p.value || p.name) : '*')).join('.');
         case 'ExplicitTable':
           return `TABLE ${formatNode(node.name, ctx)}`;
         case 'TableConstructor':
@@ -262,13 +266,18 @@
         case 'StringLiteral':
           return `'${node.value}'`;
         case 'NumericLiteral':
+          if (node.value && typeof node.value === 'object' && node.value.value !== undefined) {
+            return String(node.value.value);
+          }
+          return String(node.value);
+        case 'UnsignedNumericLiteral':
           return String(node.value);
         case 'Literal':
           return String(node.value);
         case 'Identifier':
-          return node.name;
+          return node.value || node.name;
         case 'CompoundIdentifier':
-          return node.parts.map(p => (p.type === 'Identifier' ? p.name : '*')).join('.');
+          return node.parts.map(p => (p.type === 'Identifier' ? (p.value || p.name) : '*')).join('.');
         case 'Expression2b':
           return renderExpression2b(node, ctx);
         case 'BinaryExpression':
