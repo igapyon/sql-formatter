@@ -61,6 +61,16 @@ const cases = [
   { name: 'select-coalesce', sql: 'SELECT COALESCE(a, 0) FROM t', fn: 'SqlStmtList' },
   { name: 'select-json-exists', sql: "SELECT JSON_EXISTS(doc, '$.a') FROM t", fn: 'SqlStmtList' },
   { name: 'select-interval', sql: "SELECT INTERVAL '1' DAY FROM t", fn: 'SqlStmtList' },
+  { name: 'select-window-over-basic', sql: 'SELECT SUM(a) OVER (PARTITION BY b ORDER BY c) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-window-over-frame-rows', sql: 'SELECT SUM(a) OVER (ORDER BY c ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-window-over-frame-range', sql: 'SELECT SUM(a) OVER (ORDER BY c RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-window-qualify', sql: 'SELECT a FROM t QUALIFY ROW_NUMBER() OVER (ORDER BY a) = 1', fn: 'SqlStmtList' },
+  { name: 'select-window-within-group', sql: 'SELECT LISTAGG(a) WITHIN GROUP (ORDER BY a) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-window-null-treatment', sql: 'SELECT LAST_VALUE(a) RESPECT NULLS OVER (ORDER BY a) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-window-ignore-nulls', sql: 'SELECT FIRST_VALUE(a) IGNORE NULLS OVER (ORDER BY a) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-window-filter', sql: 'SELECT COUNT(*) FILTER (WHERE a > 0) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-window-ordered-set', sql: 'SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY a) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-window-over-name', sql: 'SELECT SUM(a) OVER w FROM t WINDOW w AS (PARTITION BY b)', fn: 'SqlStmtList' },
 ];
 
 const negativeCases = [
