@@ -50,3 +50,4 @@
 - UPDATE / DELETE の整形対応
 - CREATE TABLE / CREATE INDEX の整形対応
 - DROP の整形対応
+- INTERVAL リテラルの整形対応
