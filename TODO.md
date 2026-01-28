@@ -16,6 +16,7 @@
    - 省略可能要素の優先順位を整理（誤って別名に吸われる余地の洗い出し）
 3. テスト拡張（必要なら）
    - SETOP/ORDER/LIMIT の境界・エラー例を追加
+   - フォーマッタのDML/DDL出力（UPDATE/DELETE/CREATE TABLE/CREATE INDEX/DROP）の期待出力テストを追加
 4. 仕様(.md)と実装(.js)の差分反映
    - TableRef 修飾子（TableHints/ExtendTable/TableOverOpt/Snapshot）の対応を整理 ✅
    - ASOF JOIN の MATCH_CONDITION を仕様に合わせて反映 ✅
@@ -44,3 +45,11 @@
 
 ## 未実装一覧（notImplemented が残るもの）
 （なし）
+
+## フォーマッタ TODO
+- UPDATE / DELETE の整形対応
+- CREATE TABLE / CREATE INDEX の整形対応
+- DROP の整形対応
+- INTERVAL リテラルの整形対応
+- index.html に GitHub リポジトリへのリンクアイコン追加
+- index.html の Web デザイン更新

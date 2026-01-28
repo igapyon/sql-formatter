@@ -1,13 +1,13 @@
 # SQL Formatter (WIP)
 
-このリポジトリは、最終的に **SQL Formatter** を作るためのプロジェクトです。
-現在は前段として **SQL パーサー** を実装しています。
+このリポジトリは、**SQL Formatter** を作るためのプロジェクトです。
+現在は **SQL パーサー** に加えて、**フォーマッターの実装も進行中**です。
 
 ![Playground screenshot](screenshot.png)
 
 ## 目的
 - 最終目標: SQL を整形するフォーマッタの実装
-- 現状: SQL パーサーを自作し、AST を生成する段階
+- 現状: SQL パーサー + フォーマッターの両方を実装中
 
 ## 現在の構成
 - `spec/apache-calcite-Parser.js`: パーサー本体（lexer + parser）
@@ -17,7 +17,9 @@
 - `AST.md`: AST 仕様（暫定）
 - `FORMATTER_RULES.md`: SQL Formatter の出力ルール
 - `index-parser.html`: SQL → AST 出力の簡易デモ
-- `index.html`: SQL Formatter の UI（WIP）
+- `index.html`: SQL Formatter の UI
+- `sql-formatter.js`: SQL フォーマッター本体
+- `sql-formatter-test.js`: フォーマッターテスト
 
 ## 使い方（開発時）
 テストを実行してパーサーの動作確認ができます。
@@ -28,10 +30,10 @@ node spec/apache-calcite-Parser-test.js
 
 ## 直近の作業予定
 - **index-parser.html**: SQL → AST を出力する簡易デモ（実装済み）
-- **index.html**: 将来的に SQL Formatter の UI を実装予定
+- **index.html**: SQL Formatter の UI（実装中）
+- フォーマッターの対応範囲拡張（DML/DDL など）
 - AST 仕様の整理と固定化
 - 構文の厳密化（句の順序/排他の追加チェック）
-- 最終的に formatter へ接続
 
 ## 仕様情報の流れ（開発過程）
 - `spec/apache-calcite-Parser.jj` の文法を元に `spec/apache-calcite-Parser.md`（EBNF仕様）を作成
