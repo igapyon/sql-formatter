@@ -160,6 +160,13 @@
 
     function renderExpression2b(node, ctx) {
       const base = formatNode(node.base, ctx);
+      if (node.extensions && node.extensions.length > 0) {
+        ctx.unsupported = true;
+        return base;
+      }
+      if (node.prefixes && node.prefixes.length > 0) {
+        return `${node.prefixes.join(' ')} ${base}`;
+      }
       return base;
     }
 
@@ -373,6 +380,16 @@
           return node.value || node.name;
         case 'CompoundIdentifier':
           return node.parts.map(p => (p.type === 'Identifier' ? (p.value || p.name) : '*')).join('.');
+        case 'ParenthesizedExpression':
+          return `(${formatNode(node.node, ctx)})`;
+        case 'Arg': {
+          const expr = formatNode(node.expr, ctx);
+          if (node.name) {
+            const name = node.name.value || node.name.name || node.name;
+            return `${name} => ${expr}`;
+          }
+          return expr;
+        }
         case 'NamedFunctionCall': {
           const call = node.namedCall || null;
           if (!call || !call.name) {
