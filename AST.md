@@ -18,32 +18,98 @@
 
 ## クエリ
 - `SqlSelect`
-  - `hints`, `stream`, `setQuantifier`
-  - `selectItems`, `from`, `where`, `groupBy`, `having`, `window`, `qualify`
+  - `hints`: `TableHints | null`
+  - `stream`: `boolean`
+  - `setQuantifier`: `"ALL" | "DISTINCT" | null`
+  - `selectItems`: `AddSelectItem[]`
+  - `from`: `FromClause | null`
+  - `where`: `Where | null`
+  - `groupBy`: `GroupBy | null`
+  - `having`: `Having | null`
+  - `window`: `Window | null`
+  - `qualify`: `Qualify | null`
 - `QueryOrExpr`
   - `withList`, `leaf`, `setOps`
 - `OrderedQueryOrExpr`
   - `query`, `orderByLimitOpt`
 
 ## 句
-- `FromClause` / `JoinTable` / `CommaJoin`
-- `Where` / `GroupBy` / `Having` / `Window` / `Qualify`
-- `OrderBy` / `LimitClause` / `OffsetClause` / `FetchClause`
+- `FromClause`
+  - `first`: `TableRef`
+  - `joins`: (`JoinTable` | `CommaJoin` | `ApplyJoin`)[]
+- `JoinTable`
+  - `natural`: `boolean`
+  - `joinType`: `string` (e.g. `"JOIN"`, `"LEFT JOIN"`)
+  - `table`: `TableRef`
+  - `condition`: `On | Using | null`
+- `CommaJoin`
+  - `table`
+- `Where`
+  - `expr`
+- `GroupBy`
+  - `set`: `"DISTINCT" | "ALL" | null`
+  - `list`: `GroupingElementList`
+- `Having`
+  - `expr`
+- `Window`
+  - `items`: `AddWindowSpec[]`
+- `Qualify`
+  - `expr`
+- `OrderBy`
+  - `list`: `OrderItemList`
+- `LimitClause`
+  - `value`, `offset`
+- `OffsetClause`
+  - `value`, `rows`
+- `FetchClause`
+  - `mode`, `value`, `rows`
 
 ## テーブル参照
 - `TableRef`
   - `base`, `pivot`, `unpivot`, `matchRecognize`, `alias`, `columns`, `tablesample`
-- `TableName` / `Subquery` / `Unnest` / `TableFunctionCall`
-- `Pivot` / `Unpivot` / `MatchRecognize`
+- `TableName`
+  - `name`: `CompoundTableIdentifier`
+- `Subquery`
+  - `query`: `OrderedQueryOrExpr`
+- `Unnest`
+  - `items`: `Expression[]`
+  - `withOrdinality`: `boolean`
+- `TableFunctionCall`
+  - `call`: `NamedRoutineCall`
+- `Pivot`
+  - `aggs`: `AddPivotAgg[]`
+  - `axis`: `SimpleIdentifierOrList`
+  - `values`: `AddPivotValue[]`
+- `Unpivot`
+  - `nulls`: `"INCLUDE" | "EXCLUDE" | null`
+  - `columns`: `SimpleIdentifierOrList`
+  - `axis`: `SimpleIdentifierOrList`
+  - `values`: `AddUnpivotValue[]`
+- `MatchRecognize`
+  - `partitionBy`, `orderBy`, `measures`, `rowsPerMatch`, `afterMatchSkip`
+  - `pattern`, `anchorStart`, `anchorEnd`, `within`, `subsets`, `define`
 
 ## 式
 - `Expression2b`（内部表現）
+  - `prefixes`, `base`, `extensions`
 - `BinaryExpression`
-- `Literal` / `StringLiteral` / `NumericLiteral`
-- `Identifier` / `CompoundIdentifier`
+  - `operator`, `left`, `right`
+- `Literal`
+  - `value`
+- `StringLiteral`
+  - `value`
+- `NumericLiteral`
+  - `value`
+- `Identifier`
+  - `name`
+- `CompoundIdentifier`
+  - `parts`
 
 ## 関数
-- `NamedFunctionCall` / `BuiltinFunctionCall`
+- `NamedFunctionCall`
+  - `name`, `args`, `orderBy`, `withinGroup`, `nullTreatment`, `filter`, `over`
+- `BuiltinFunctionCall`
+  - `kind` ごとにフィールドが異なる（各関数ノード参照）
 - `MatchRecognizeFunctionCall`
 
 ## DML/DDL
@@ -71,6 +137,6 @@
 ```
 
 ## TODO
-- 主要ノードのフィールドを詳細化
 - `Expression*` 系の正規化
+- `BuiltinFunctionCall` の各関数ノードの仕様を追加
 - テストで AST 形を固定
