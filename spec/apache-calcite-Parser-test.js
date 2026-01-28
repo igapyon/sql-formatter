@@ -142,6 +142,8 @@ const negativeCases = [
   { name: 'neg-fetch-without-order', sql: 'SELECT * FROM t FETCH FIRST 1 ROW ONLY', fn: 'SqlStmtList' },
   { name: 'neg-limit-and-fetch', sql: 'SELECT * FROM t ORDER BY a LIMIT 1 FETCH FIRST 1 ROW ONLY', fn: 'SqlStmtList' },
   { name: 'neg-where-without-from', sql: 'SELECT a WHERE a > 0', fn: 'SqlStmtList' },
+  { name: 'neg-offset-without-order', sql: 'SELECT * FROM t OFFSET 1', fn: 'SqlStmtList' },
+  { name: 'neg-setop-nonquery-left', sql: '1 UNION SELECT 1', fn: 'SqlStmtList' },
 ];
 
 if (require.main === module) {
