@@ -33,6 +33,10 @@ node spec/apache-calcite-Parser-test.js
 - 構文の厳密化（句の順序/排他の追加チェック）
 - 最終的に formatter へ接続
 
+## 仕様情報の流れ（開発過程）
+- `spec/apache-calcite-Parser.jj` の文法を元に `spec/apache-calcite-Parser.md`（EBNF仕様）を作成
+- `spec/apache-calcite-Parser.md` を元に `spec/apache-calcite-Parser.js`（実装）を生成
+
 ## デモ機能
 - AST の JSON 出力
 - トークン一覧の表示
