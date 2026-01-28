@@ -480,6 +480,22 @@ class CalciteParser {
     if (this.isSymbol("(")) {
       columns = this.ParenthesizedCompoundIdentifierList();
     }
+    const isSourceStart =
+      this.isKeyword("WITH") ||
+      this.isKeyword("SELECT") ||
+      this.isKeyword("VALUES") ||
+      this.isKeyword("VALUE") ||
+      this.isKeyword("TABLE") ||
+      (this.isSymbol("(") && (
+        this.isKeywordAt("WITH", 1) ||
+        this.isKeywordAt("SELECT", 1) ||
+        this.isKeywordAt("VALUES", 1) ||
+        this.isKeywordAt("VALUE", 1) ||
+        this.isKeywordAt("TABLE", 1)
+      ));
+    if (!isSourceStart) {
+      throw new Error("Invalid INSERT source");
+    }
     const source = this.OrderedQueryOrExpr();
     return { type: "SqlInsert", mode, keywords, table, hints, extend, columns, source };
   }
@@ -662,6 +678,9 @@ class CalciteParser {
       }
     } else if (this.isKeyword("FETCH")) {
       fetch = this.FetchClause();
+    }
+    if (offset && !orderBy) {
+      throw new Error("OFFSET requires ORDER BY");
     }
     if (fetch && !orderBy) {
       throw new Error("FETCH requires ORDER BY");

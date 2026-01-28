@@ -121,6 +121,17 @@ const cases = [
   { name: 'setop-order-offset-limit', sql: 'SELECT a FROM t UNION SELECT a FROM u ORDER BY a OFFSET 2 LIMIT 4', fn: 'SqlStmtList' },
   { name: 'setop-table-values', sql: 'VALUES (1) UNION SELECT 2', fn: 'SqlStmtList' },
   { name: 'setop-table-table', sql: 'TABLE t UNION TABLE u', fn: 'SqlStmtList' },
+  { name: 'insert-upsert', sql: 'UPSERT INTO t(a) VALUES (1)', fn: 'SqlStmtList' },
+  { name: 'insert-hints', sql: 'INSERT INTO t /*+ hint */ (a) VALUES (1)', fn: 'SqlStmtList' },
+  { name: 'update-with-alias', sql: 'UPDATE t AS x SET a = 1', fn: 'SqlStmtList' },
+  { name: 'update-with-extend', sql: 'UPDATE t EXTEND (a INTEGER) SET a = 1', fn: 'SqlStmtList' },
+  { name: 'delete-with-alias', sql: 'DELETE FROM t AS x', fn: 'SqlStmtList' },
+  { name: 'delete-with-extend', sql: 'DELETE FROM t EXTEND (a INTEGER)', fn: 'SqlStmtList' },
+  { name: 'merge-with-extend', sql: 'MERGE INTO t EXTEND (a INTEGER) USING u ON t.id = u.id WHEN MATCHED THEN UPDATE SET a = 1', fn: 'SqlStmtList' },
+  { name: 'explain-including-all', sql: 'EXPLAIN PLAN INCLUDING ALL ATTRIBUTES FOR SELECT 1', fn: 'SqlStmtList' },
+  { name: 'explain-as-xml', sql: 'EXPLAIN PLAN AS XML FOR SELECT 1', fn: 'SqlStmtList' },
+  { name: 'describe-table-extra', sql: 'DESCRIBE TABLE t EXTENDED', fn: 'SqlStmtList' },
+  { name: 'set-interval', sql: "SET foo = INTERVAL '1' DAY", fn: 'SqlStmtList' },
 ];
 
 const negativeCases = [
