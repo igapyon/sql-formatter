@@ -134,7 +134,11 @@ class CalciteLexer {
           if (!/^[0-9A-Fa-f]{6}$/.test(hex)) {
             throw new Error("Invalid Unicode escape sequence");
           }
-          out += String.fromCodePoint(parseInt(hex, 16));
+          const code = parseInt(hex, 16);
+          if (code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF)) {
+            throw new Error("Invalid Unicode code point");
+          }
+          out += String.fromCodePoint(code);
           i += 7;
           continue;
         }
@@ -142,7 +146,11 @@ class CalciteLexer {
         if (!/^[0-9A-Fa-f]{4}$/.test(hex)) {
           throw new Error("Invalid Unicode escape sequence");
         }
-        out += String.fromCodePoint(parseInt(hex, 16));
+        const code = parseInt(hex, 16);
+        if (code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF)) {
+          throw new Error("Invalid Unicode code point");
+        }
+        out += String.fromCodePoint(code);
         i += 4;
       }
       return out;

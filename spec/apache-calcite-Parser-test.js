@@ -209,6 +209,8 @@ const negativeCases = [
   { name: 'neg-delete-missing-from', sql: 'DELETE t', fn: 'SqlStmtList' },
   { name: 'neg-merge-missing-into', sql: 'MERGE t USING u ON t.id = u.id WHEN MATCHED THEN UPDATE SET a = 1', fn: 'SqlStmtList' },
   { name: 'neg-insert-missing-into', sql: 'INSERT t(a) VALUES (1)', fn: 'SqlStmtList' },
+  { name: 'neg-unicode-escape-surrogate', sql: "SELECT U&'\\D800' FROM t", fn: 'SqlStmtList' },
+  { name: 'neg-unicode-escape-out-of-range', sql: "SELECT U&'\\+110000' FROM t", fn: 'SqlStmtList' },
 ];
 
 if (require.main === module) {
