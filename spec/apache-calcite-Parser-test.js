@@ -101,6 +101,16 @@ const cases = [
   { name: 'select-cast-typed', sql: 'SELECT CAST(a AS DECIMAL(10,2)) FROM t', fn: 'SqlStmtList' },
   { name: 'select-cast-with-timezone', sql: 'SELECT CAST(a AS TIMESTAMP WITH TIME ZONE) FROM t', fn: 'SqlStmtList' },
   { name: 'select-period', sql: "SELECT PERIOD (DATE '2020-01-01', DATE '2020-12-31') FROM t", fn: 'SqlStmtList' },
+  { name: 'insert-select', sql: 'INSERT INTO t(a) SELECT a FROM u', fn: 'SqlStmtList' },
+  { name: 'insert-default-values', sql: 'INSERT INTO t VALUES (DEFAULT)', fn: 'SqlStmtList' },
+  { name: 'update-multi-set', sql: 'UPDATE t SET a = 1, b = 2 WHERE c = 3', fn: 'SqlStmtList' },
+  { name: 'delete-simple', sql: 'DELETE FROM t', fn: 'SqlStmtList' },
+  { name: 'merge-update-insert', sql: 'MERGE INTO t USING u ON t.id = u.id WHEN MATCHED THEN UPDATE SET a = 1 WHEN NOT MATCHED THEN INSERT (id) VALUES (u.id)', fn: 'SqlStmtList' },
+  { name: 'explain-without-impl', sql: 'EXPLAIN PLAN WITHOUT IMPLEMENTATION FOR SELECT 1', fn: 'SqlStmtList' },
+  { name: 'describe-catalog', sql: 'DESCRIBE CATALOG cat', fn: 'SqlStmtList' },
+  { name: 'describe-schema', sql: 'DESCRIBE SCHEMA sch', fn: 'SqlStmtList' },
+  { name: 'set-string', sql: "SET foo = 'bar'", fn: 'SqlStmtList' },
+  { name: 'set-null', sql: 'SET foo = NULL', fn: 'SqlStmtList' },
 ];
 
 const negativeCases = [
