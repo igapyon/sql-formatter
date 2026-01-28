@@ -2,6 +2,12 @@
 
 const { CalciteLexer, CalciteParser } = require('./apache-calcite-Parser');
 
+const stmt = (name, sql) => ({ name, sql, fn: 'SqlStmtList' });
+const selectList = (items) => `SELECT ${items.join(', ')}`;
+const fromTable = (table) => `FROM ${table}`;
+const joinSubquery = (left, right, onExpr) =>
+  `SELECT ${left}.id FROM ${left} JOIN (SELECT id FROM ${right}) AS ${right} ON ${onExpr}`;
+
 const cases = [
   // basic
   { name: 'select-basic', sql: 'SELECT 1', fn: 'SqlStmtList' },
@@ -82,6 +88,7 @@ const cases = [
   { name: 'from-table-function', sql: 'SELECT * FROM TABLE(foo(1))', fn: 'SqlStmtList' },
   { name: 'from-tablesample', sql: 'SELECT * FROM t TABLESAMPLE SYSTEM (10) REPEATABLE (1)', fn: 'SqlStmtList' },
   { name: 'from-snapshot', sql: "SELECT * FROM t FOR SYSTEM_TIME AS OF TIMESTAMP '2020-01-01 00:00:00'", fn: 'SqlStmtList' },
+  stmt('join-subquery', joinSubquery('a', 'b', 'a.id = b.id')),
   { name: 'select-setop-union', sql: 'SELECT a FROM t UNION SELECT a FROM u', fn: 'SqlStmtList' },
   { name: 'select-setop-intersect', sql: 'SELECT a FROM t INTERSECT SELECT a FROM u', fn: 'SqlStmtList' },
   { name: 'select-setop-except', sql: 'SELECT a FROM t EXCEPT SELECT a FROM u', fn: 'SqlStmtList' },
@@ -96,6 +103,11 @@ const cases = [
   { name: 'select-fetch-next', sql: 'SELECT a FROM t ORDER BY a FETCH NEXT 3 ROWS ONLY', fn: 'SqlStmtList' },
   { name: 'select-values', sql: 'VALUES (1), (2)', fn: 'SqlStmtList' },
   { name: 'select-table', sql: 'TABLE t', fn: 'SqlStmtList' },
+  // japanese identifiers
+  stmt(
+    'select-japanese-idents',
+    `${selectList(['顧客.会員ID', 'COUNT(注文ID) AS 注文数'])} ${fromTable('顧客')} GROUP BY 会員ID`
+  ),
   // expression / function variants
   { name: 'select-case', sql: 'SELECT CASE WHEN a > 0 THEN 1 ELSE 0 END FROM t', fn: 'SqlStmtList' },
   { name: 'select-cast', sql: 'SELECT CAST(a AS INTEGER) FROM t', fn: 'SqlStmtList' },
