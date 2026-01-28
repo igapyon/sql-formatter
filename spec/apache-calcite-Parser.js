@@ -264,7 +264,7 @@ class CalciteParser {
       "UNION", "INTERSECT", "EXCEPT",
       "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "ASOF", "NATURAL",
       "SET", "USING", "ON", "WHEN", "FOR",
-      "MATCH_RECOGNIZE",
+      "MATCH_RECOGNIZE", "MATCH_CONDITION", "PIVOT", "UNPIVOT", "TABLESAMPLE",
     ]);
     return keywords.has(value);
   }
@@ -277,6 +277,31 @@ class CalciteParser {
       throw new Error(`Expected ${type} but got ${t.type}`);
     }
     return this.next();
+  }
+  ExpressionUntilKeyword(keyword) {
+    let depth = 0;
+    let idx = -1;
+    for (let i = this.pos; i < this.tokens.length; i++) {
+      const t = this.tokens[i];
+      if (t.type === "SYMBOL") {
+        if (t.value === "(" || t.value === "[" || t.value === "{") depth++;
+        else if (t.value === ")" || t.value === "]" || t.value === "}") depth = Math.max(0, depth - 1);
+      }
+      if (depth === 0 && t.type === "IDENT" && String(t.value).toUpperCase() === keyword) {
+        idx = i;
+        break;
+      }
+    }
+    if (idx === -1) {
+      throw new Error(`Expected keyword ${keyword} after expression`);
+    }
+    const subTokens = this.tokens.slice(this.pos, idx);
+    subTokens.push({ type: "EOF", value: null });
+    const subParser = new CalciteParser(subTokens);
+    const expr = subParser.Expression();
+    subParser.expect("EOF");
+    this.pos = idx;
+    return expr;
   }
   notImplemented(rule) {
     const t = this.peek();
@@ -1052,10 +1077,17 @@ class CalciteParser {
     const joinType = this.JoinType();
     const table = this.TableRef();
     let condition = null;
-    if (this.acceptKeyword("ON")) {
+    let matchCondition = null;
+    if (joinType === "ASOF JOIN" && this.acceptKeyword("MATCH_CONDITION")) {
+      matchCondition = this.ExpressionUntilKeyword("ON");
+      this.expectKeyword("ON");
       condition = { type: "On", expr: this.Expression() };
-    } else if (this.acceptKeyword("USING")) {
-      condition = { type: "Using", columns: this.ParenthesizedSimpleIdentifierList() };
+    } else {
+      if (this.acceptKeyword("ON")) {
+        condition = { type: "On", expr: this.Expression() };
+      } else if (this.acceptKeyword("USING")) {
+        condition = { type: "Using", columns: this.ParenthesizedSimpleIdentifierList() };
+      }
     }
     if (!natural && joinType !== "CROSS JOIN" && !condition) {
       throw new Error("JOIN requires ON or USING");
@@ -1063,7 +1095,10 @@ class CalciteParser {
     if (natural && condition) {
       throw new Error("NATURAL JOIN cannot use ON or USING");
     }
-    return { type: "JoinTable", natural, joinType, table, condition };
+    if (matchCondition && joinType !== "ASOF JOIN") {
+      throw new Error("MATCH_CONDITION is only valid for ASOF JOIN");
+    }
+    return { type: "JoinTable", natural, joinType, table, matchCondition, condition };
   }
 
   TableRef() {
@@ -1080,11 +1115,18 @@ class CalciteParser {
 
   TableRef3() {
     let base;
+    let hints = null;
+    let extend = null;
+    let over = null;
+    let snapshot = null;
+    let matchRecognize = null;
     if (this.acceptKeyword("LATERAL")) {
       if (this.isSymbol("(")) {
         this.expectSymbol("(");
         const query = this.OrderedQueryOrExpr();
         this.expectSymbol(")");
+        over = this.TableOverOpt();
+        if (this.isKeyword("MATCH_RECOGNIZE")) matchRecognize = this.MatchRecognize();
         base = { type: "LateralSubquery", query };
       } else if (this.acceptKeyword("UNNEST")) {
         this.expectSymbol("(");
@@ -1099,6 +1141,8 @@ class CalciteParser {
       this.expectSymbol("(");
       const query = this.OrderedQueryOrExpr();
       this.expectSymbol(")");
+      over = this.TableOverOpt();
+      if (this.isKeyword("MATCH_RECOGNIZE")) matchRecognize = this.MatchRecognize();
       base = { type: "Subquery", query };
     } else if (this.isKeyword("UNNEST")) {
       this.expectKeyword("UNNEST");
@@ -1123,6 +1167,17 @@ class CalciteParser {
         this.expectSymbol(")");
         base = { type: "ImplicitTableFunctionCall", name, args };
       } else {
+        if (this.isTableHintsStart()) {
+          hints = this.TableHints();
+        }
+        if (this.isKeyword("EXTEND")) {
+          extend = this.ExtendTable();
+        }
+        over = this.TableOverOpt();
+        if (this.isKeyword("FOR")) {
+          snapshot = this.Snapshot();
+        }
+        if (this.isKeyword("MATCH_RECOGNIZE")) matchRecognize = this.MatchRecognize();
         base = { type: "TableName", name };
       }
     } else {
@@ -1133,8 +1188,6 @@ class CalciteParser {
     if (this.isKeyword("PIVOT")) pivot = this.Pivot();
     let unpivot = null;
     if (this.isKeyword("UNPIVOT")) unpivot = this.Unpivot();
-    let matchRecognize = null;
-    if (this.isKeyword("MATCH_RECOGNIZE")) matchRecognize = this.MatchRecognize();
     // alias
     let alias = null;
     let columns = null;
@@ -1156,7 +1209,7 @@ class CalciteParser {
     if (this.isKeyword("TABLESAMPLE")) {
       tablesample = this.Tablesample();
     }
-    return { type: "TableRef", base, pivot, unpivot, matchRecognize, alias, columns, tablesample };
+    return { type: "TableRef", base, hints, extend, over, snapshot, matchRecognize, pivot, unpivot, alias, columns, tablesample };
   }
 
   Snapshot() {
