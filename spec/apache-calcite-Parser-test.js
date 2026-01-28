@@ -71,6 +71,23 @@ const cases = [
   { name: 'select-window-filter', sql: 'SELECT COUNT(*) FILTER (WHERE a > 0) FROM t', fn: 'SqlStmtList' },
   { name: 'select-window-ordered-set', sql: 'SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY a) FROM t', fn: 'SqlStmtList' },
   { name: 'select-window-over-name', sql: 'SELECT SUM(a) OVER w FROM t WINDOW w AS (PARTITION BY b)', fn: 'SqlStmtList' },
+  { name: 'select-json-query', sql: "SELECT JSON_QUERY(doc, '$.a') FROM t", fn: 'SqlStmtList' },
+  { name: 'select-json-object', sql: "SELECT JSON_OBJECT('a' VALUE 1) FROM t", fn: 'SqlStmtList' },
+  { name: 'select-json-array', sql: "SELECT JSON_ARRAY(1, 2, 3) FROM t", fn: 'SqlStmtList' },
+  { name: 'select-json-objectagg', sql: "SELECT JSON_OBJECTAGG(k VALUE v) FROM t", fn: 'SqlStmtList' },
+  { name: 'select-json-arrayagg', sql: "SELECT JSON_ARRAYAGG(a) FROM t", fn: 'SqlStmtList' },
+  { name: 'select-trim', sql: "SELECT TRIM(BOTH 'x' FROM a) FROM t", fn: 'SqlStmtList' },
+  { name: 'select-substring', sql: 'SELECT SUBSTRING(a FROM 2 FOR 3) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-position', sql: "SELECT POSITION('a' IN b) FROM t", fn: 'SqlStmtList' },
+  { name: 'select-translate', sql: "SELECT TRANSLATE(a, 'abc', 'xyz') FROM t", fn: 'SqlStmtList' },
+  { name: 'select-overlay', sql: "SELECT OVERLAY(a PLACING 'x' FROM 2) FROM t", fn: 'SqlStmtList' },
+  { name: 'select-date-trunc', sql: "SELECT DATE_TRUNC('DAY', d) FROM t", fn: 'SqlStmtList' },
+  { name: 'select-timestamp-diff', sql: 'SELECT TIMESTAMP_DIFF(t1, t2, DAY) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-time-trunc', sql: "SELECT TIME_TRUNC(t, HOUR) FROM t", fn: 'SqlStmtList' },
+  { name: 'select-convert', sql: 'SELECT CONVERT(a, INTEGER) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-extract', sql: 'SELECT EXTRACT(YEAR FROM d) FROM t', fn: 'SqlStmtList' },
+  { name: 'select-contains-substr', sql: "SELECT CONTAINS_SUBSTR(a, 'x') FROM t", fn: 'SqlStmtList' },
+  { name: 'select-contains-substr-with-scope', sql: "SELECT CONTAINS_SUBSTR(a, 'x', JSON_SCOPE := 2) FROM t", fn: 'SqlStmtList' },
 ];
 
 const negativeCases = [
