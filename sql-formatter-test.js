@@ -6,12 +6,24 @@ const cases = [
   {
     name: 'basic-select',
     sql: 'SELECT a FROM t',
-    expectIncludes: ['SELECT', 'FROM', 't'],
+    expect: `SELECT
+    a
+FROM
+    t`,
   },
   {
     name: 'select-where',
     sql: 'SELECT a FROM t WHERE b = 1',
-    expectIncludes: ['WHERE', 'b', '1'],
+    expect: `SELECT
+    a
+FROM
+    t
+WHERE b = 1`,
+  },
+  {
+    name: 'select-line-comment',
+    sql: "SELECT -- keep comment\n  a\nFROM t",
+    expectIncludes: ['SELECT -- keep comment'],
   },
 ];
 
@@ -19,7 +31,12 @@ let failed = 0;
 for (const c of cases) {
   try {
     const out = formatSql(c.sql);
-    const ok = c.expectIncludes.every((frag) => out.includes(frag));
+    let ok = true;
+    if (c.expect !== undefined) {
+      ok = out.trim() === c.expect.trim();
+    } else if (c.expectIncludes) {
+      ok = c.expectIncludes.every((frag) => out.includes(frag));
+    }
     if (!ok) {
       failed++;
       console.error(`NG  ${c.name}: output missing expected fragments`);
