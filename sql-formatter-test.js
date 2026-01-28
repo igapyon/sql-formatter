@@ -18,12 +18,37 @@ FROM
     a
 FROM
     t
-WHERE b = 1`,
+WHERE
+    b = 1`,
   },
   {
     name: 'select-line-comment',
     sql: "SELECT -- keep comment\n  a\nFROM t",
     expectIncludes: ['SELECT -- keep comment'],
+  },
+  {
+    name: 'select-group-by',
+    sql: 'SELECT a, b FROM t GROUP BY a, b',
+    expect: `SELECT
+    a
+    , b
+FROM
+    t
+GROUP BY
+    a
+    , b`,
+  },
+  {
+    name: 'select-order-by',
+    sql: 'SELECT a, b FROM t ORDER BY a DESC, b',
+    expect: `SELECT
+    a
+    , b
+FROM
+    t
+ORDER BY
+    a DESC
+    , b`,
   },
   {
     name: 'nested-subquery',
@@ -37,7 +62,8 @@ FROM
             , name
         FROM
             users
-        WHERE active = 1
+        WHERE
+            active = 1
     ) u`,
   },
 ];

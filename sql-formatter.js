@@ -125,7 +125,8 @@ function renderSelect(node, ctx) {
     lines.push(`${indent(ctx, 1)}${renderNode(node.from, { ...ctx, indent: ctx.indent + 1 })}`);
   }
   if (node.where) {
-    lines.push(`${indent(ctx)}${renderNode(node.where, { ...ctx, indent: ctx.indent + 1 })}`);
+    lines.push(`${indent(ctx)}WHERE`);
+    lines.push(`${indent(ctx, 1)}${renderNode(node.where.expr, { ...ctx, indent: ctx.indent + 1 })}`);
   }
   if (node.groupBy) {
     lines.push(`${indent(ctx)}${renderNode(node.groupBy, ctx)}`);
