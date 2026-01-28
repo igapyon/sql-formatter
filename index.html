@@ -117,7 +117,13 @@
           render(sql);
         } else {
           status.textContent = `ok (pos: ${parser.pos})`;
-          render(formatted);
+          let withComments = formatted;
+          try {
+            withComments = injectComments(sql, formatted) || formatted;
+          } catch (_e) {
+            withComments = formatted;
+          }
+          render(withComments);
         }
       } catch (err) {
         status.textContent = 'error';
@@ -156,6 +162,76 @@
       walk(node);
       if (parts.length === 0) return '';
       return parts.map((p, i) => (i === 0 ? p : `${indent(ctx)}${op} ${p}`)).join('\n');
+    }
+
+    function injectComments(originalSql, formatted) {
+      if (!formatted) return formatted;
+      const srcLines = originalSql.split('\n');
+      const commentBlocks = [];
+      let current = null;
+      for (let i = 0; i < srcLines.length; i++) {
+        const trimmed = srcLines[i].trim();
+        if (trimmed.startsWith('--')) {
+          if (!current) current = { start: i, lines: [] };
+          current.lines.push(trimmed);
+          continue;
+        }
+        if (current) {
+          commentBlocks.push(current);
+          current = null;
+        }
+      }
+      if (current) commentBlocks.push(current);
+      if (commentBlocks.length === 0) return formatted;
+
+      const formattedLines = formatted.split('\n');
+      const withIndices = [];
+      for (let i = 0; i < formattedLines.length; i++) {
+        if (formattedLines[i].trim().startsWith('WITH')) {
+          withIndices.push(i);
+        }
+      }
+      const cteLines = [];
+      for (let i = 0; i < formattedLines.length; i++) {
+        if (/^\s*,\s*\w+\s+AS\s+\(/.test(formattedLines[i])) {
+          cteLines.push(i);
+        } else if (/^\s*\w+\s+AS\s+\(/.test(formattedLines[i]) && i > 0 && formattedLines[i - 1].trim().startsWith('WITH')) {
+          cteLines.push(i);
+        }
+      }
+      if (cteLines.length === 0) return formatted;
+
+      const inserts = new Map();
+      let cteIndex = 0;
+      for (const block of commentBlocks) {
+        if (cteIndex >= cteLines.length) break;
+        const lineIndex = cteLines[cteIndex++];
+        const existing = inserts.get(lineIndex) || [];
+        const indented = block.lines.map(line => `${indent({ indent: 0 }, 1)}${line}`);
+        inserts.set(lineIndex, existing.concat(indented));
+      }
+      // any remaining comment blocks: append at end
+      if (cteIndex < commentBlocks.length) {
+        const tail = [];
+        for (let i = cteIndex; i < commentBlocks.length; i++) {
+          tail.push(...commentBlocks[i].lines.map(line => `${indent({ indent: 0 }, 1)}${line}`));
+        }
+        const existing = inserts.get(formattedLines.length) || [];
+        inserts.set(formattedLines.length, existing.concat(tail));
+      }
+      if (inserts.size === 0) return formatted;
+
+      const out = [];
+      for (let i = 0; i < formattedLines.length; i++) {
+        if (inserts.has(i)) {
+          out.push(...inserts.get(i));
+        }
+        out.push(formattedLines[i]);
+      }
+      if (inserts.has(formattedLines.length)) {
+        out.push(...inserts.get(formattedLines.length));
+      }
+      return out.join('\n');
     }
 
     function renderExpression2b(node, ctx) {
@@ -204,9 +280,10 @@
     function renderGroupBy(node, ctx) {
       const items = node.list.items.map(it => formatNode(it, ctx));
       if (items.length === 0) return 'GROUP BY';
-      const lines = [`GROUP BY ${items[0]}`];
+      const lines = ['GROUP BY'];
+      lines.push(`${indent(ctx, 1)}${items[0]}`);
       for (let i = 1; i < items.length; i++) {
-        lines.push(`${indent(ctx)}, ${items[i]}`);
+        lines.push(`${indent(ctx, 1)}, ${items[i]}`);
       }
       return lines.join('\n');
     }
@@ -215,6 +292,12 @@
       const base = formatNode(node.first, ctx);
       const joins = (node.joins || []).map(j => formatNode(j, ctx));
       return [base, ...joins].join('\n' + indent(ctx));
+    }
+
+    function renderTableRef(node, ctx) {
+      const base = node.base ? formatNode(node.base, ctx) : '[TableRef]';
+      const alias = node.alias ? (node.alias.value || node.alias.name || node.alias) : null;
+      return alias ? `${base} ${alias}` : base;
     }
 
     function renderJoin(node, ctx) {
@@ -342,7 +425,7 @@
           if (node.star) return '*';
           return formatNode(node.expr, ctx);
         case 'TableRef':
-          return node.base ? formatNode(node.base, ctx) : '[TableRef]';
+          return renderTableRef(node, ctx);
         case 'TableName':
           return formatNode(node.name, ctx);
         case 'CompoundTableIdentifier':
@@ -365,6 +448,13 @@
           return node.items.map(it => renderOrderItem(it, ctx)).join('\n');
         case 'AddOrderItem':
           return renderOrderItem(node, ctx);
+        case 'GroupingElementList':
+          return node.items.map(it => formatNode(it, ctx)).join('\n');
+        case 'AddGroupingElement':
+          if (node.kind === 'EXPR') return formatNode(node.expr, ctx);
+          if (node.list) return formatNode(node.list, ctx);
+          ctx.unsupported = true;
+          return '';
         case 'StringLiteral':
           return `'${node.value}'`;
         case 'NumericLiteral':
@@ -381,6 +471,8 @@
         case 'CompoundIdentifier':
           return node.parts.map(p => (p.type === 'Identifier' ? (p.value || p.name) : '*')).join('.');
         case 'ParenthesizedExpression':
+          return `(${formatNode(node.node, ctx)})`;
+        case 'ParenExpression':
           return `(${formatNode(node.node, ctx)})`;
         case 'Arg': {
           const expr = formatNode(node.expr, ctx);
