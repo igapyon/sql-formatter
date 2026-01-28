@@ -168,8 +168,13 @@ class CalciteLexer {
       }
       // line comment
       if (ch === "-" && s[this.pos + 1] === "-") {
+        const start = this.pos;
         this.pos += 2;
-        while (this.pos < s.length && s[this.pos] !== "\n") this.pos++;
+        let value = "";
+        while (this.pos < s.length && s[this.pos] !== "\n") {
+          value += s[this.pos++];
+        }
+        this.tokens.push({ type: "COMMENT_LINE", value: value.trim(), start, end: this.pos });
         continue;
       }
       // block comment
@@ -370,9 +375,32 @@ class CalciteParser {
     this.tokens = tokens || [];
     this.pos = 0;
   }
-  peek() { return this.tokens[this.pos] || { type: "EOF", value: null }; }
-  peekN(n) { return this.tokens[this.pos + n] || { type: "EOF", value: null }; }
-  next() { return this.tokens[this.pos++] || { type: "EOF", value: null }; }
+  isCommentToken(t) { return t && t.type === "COMMENT_LINE"; }
+  peekRaw() { return this.tokens[this.pos] || { type: "EOF", value: null }; }
+  peek() {
+    let i = this.pos;
+    while (this.isCommentToken(this.tokens[i])) i++;
+    return this.tokens[i] || { type: "EOF", value: null };
+  }
+  peekN(n) {
+    let i = this.pos;
+    let count = 0;
+    while (i < this.tokens.length) {
+      const t = this.tokens[i];
+      if (!this.isCommentToken(t)) {
+        if (count === n) return t;
+        count++;
+      }
+      i++;
+    }
+    return { type: "EOF", value: null };
+  }
+  nextRaw() { return this.tokens[this.pos++] || { type: "EOF", value: null }; }
+  next() {
+    let t = this.nextRaw();
+    while (this.isCommentToken(t)) t = this.nextRaw();
+    return t || { type: "EOF", value: null };
+  }
   isEOF() { return this.peek().type === "EOF"; }
   isSymbol(value) {
     const t = this.peek();
@@ -496,6 +524,14 @@ class CalciteParser {
     }
     return this.next();
   }
+  collectLineComments() {
+    const comments = [];
+    while (this.isCommentToken(this.peekRaw())) {
+      const t = this.nextRaw();
+      comments.push(t.value || "");
+    }
+    return comments;
+  }
   ExpressionUntilKeyword(keyword) {
     let depth = 0;
     let idx = -1;
@@ -528,6 +564,7 @@ class CalciteParser {
 
   SqlStmtList() {
     const statements = [];
+    const leadingComments = this.collectLineComments();
     if (!this.isEOF()) {
       statements.push(this.SqlStmt());
       while (this.acceptSymbol(";")) {
@@ -536,7 +573,7 @@ class CalciteParser {
       }
     }
     this.expect("EOF");
-    return { type: "SqlStmtList", statements };
+    return { type: "SqlStmtList", leadingComments, statements };
   }
 
   SqlStmtEof() {
@@ -1020,6 +1057,7 @@ class CalciteParser {
 
   SqlSelect() {
     this.expectKeyword("SELECT");
+    const selectComments = this.collectLineComments();
     let hints = null;
     if (this.isTableHintsStart()) {
       hints = this.TableHints();
@@ -1061,6 +1099,7 @@ class CalciteParser {
     }
     return {
       type: "SqlSelect",
+      selectComments,
       hints,
       stream,
       setQuantifier,
