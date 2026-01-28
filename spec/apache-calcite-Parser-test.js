@@ -41,7 +41,13 @@ const cases = [
   { name: 'lexer-block-comment', sql: 'SELECT /* block */ 1', fn: 'SqlStmtList' },
   { name: 'lexer-quoted-ident-double', sql: 'SELECT "Select" FROM "From"', fn: 'SqlStmtList' },
   { name: 'lexer-quoted-ident-backtick', sql: 'SELECT `a` FROM `b`', fn: 'SqlStmtList' },
+  { name: 'lexer-quoted-ident-bracket', sql: 'SELECT [Select] FROM [From]', fn: 'SqlStmtList' },
+  { name: 'lexer-hyphenated-ident', sql: 'SELECT * FROM a-b', fn: 'SqlStmtList' },
   { name: 'lexer-string-escape', sql: "SELECT 'a''b' FROM t", fn: 'SqlStmtList' },
+  { name: 'lexer-string-prefixed-n', sql: "SELECT N'abc' FROM t", fn: 'SqlStmtList' },
+  { name: 'lexer-string-prefixed-e', sql: "SELECT E'\\n' FROM t", fn: 'SqlStmtList' },
+  { name: 'lexer-string-prefixed-x', sql: "SELECT X'0A' FROM t", fn: 'SqlStmtList' },
+  { name: 'lexer-string-unicode', sql: "SELECT U&'d\\\\0061' UESCAPE '\\\\' FROM t", fn: 'SqlStmtList' },
   { name: 'lexer-number-exponent', sql: 'SELECT 1.2e-3 FROM t', fn: 'SqlStmtList' },
   { name: 'lexer-number-leading-dot', sql: 'SELECT .5 FROM t', fn: 'SqlStmtList' },
   // DDL / DCL

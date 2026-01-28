@@ -14,6 +14,80 @@ class CalciteLexer {
 
   tokenize() {
     const s = this.input;
+    const len = s.length;
+    const skipWhitespace = (p) => {
+      while (p < len && /\s/.test(s[p])) p++;
+      return p;
+    };
+    const startsWithKeywordAt = (p, keyword) => {
+      const slice = s.slice(p, p + keyword.length);
+      if (slice.toUpperCase() !== keyword) return false;
+      const next = s[p + keyword.length];
+      return !(next && /[A-Za-z0-9_]/.test(next));
+    };
+    const readQuotedString = () => {
+      const start = this.pos;
+      let value = "";
+      this.pos++;
+      while (this.pos < len) {
+        if (s[this.pos] === "'") {
+          if (s[this.pos + 1] === "'") {
+            value += "'";
+            this.pos += 2;
+            continue;
+          }
+          break;
+        }
+        if (s[this.pos] === "\\" && this.pos + 1 < len) {
+          value += s[this.pos + 1];
+          this.pos += 2;
+          continue;
+        }
+        value += s[this.pos++];
+      }
+      if (s[this.pos] === "'") this.pos++;
+      return { value, start, end: this.pos };
+    };
+    const readQuotedIdentifier = (quote) => {
+      const start = this.pos;
+      let value = "";
+      this.pos++;
+      while (this.pos < len) {
+        if (s[this.pos] === quote) {
+          if (s[this.pos + 1] === quote) {
+            value += quote;
+            this.pos += 2;
+            continue;
+          }
+          break;
+        }
+        value += s[this.pos++];
+      }
+      if (s[this.pos] === quote) this.pos++;
+      return { value, start, end: this.pos };
+    };
+    const tryReadBracketIdentifier = () => {
+      let p = this.pos + 1;
+      let value = "";
+      while (p < len) {
+        if (s[p] === "]") {
+          if (s[p + 1] === "]") {
+            value += "]";
+            p += 2;
+            continue;
+          }
+          break;
+        }
+        if (s[p] === "\n" || s[p] === "\r") return null;
+        value += s[p++];
+      }
+      if (s[p] !== "]") return null;
+      if (!value || !/^[A-Za-z_]/.test(value)) return null;
+      if (!/^[A-Za-z0-9_ \\-]+$/.test(value)) return null;
+      const start = this.pos;
+      this.pos = p + 1;
+      return { value, start, end: this.pos };
+    };
     while (this.pos < s.length) {
       const ch = s[this.pos];
       if (/\s/.test(ch)) {
@@ -35,50 +109,67 @@ class CalciteLexer {
         if (this.pos < s.length) this.pos += 2;
         continue;
       }
-      // strings (single-quoted, with simple escape handling)
-      if (ch === "'") {
-        const start = this.pos;
-        let value = "";
-        this.pos++;
-        while (this.pos < s.length) {
-          if (s[this.pos] === "'") {
-            if (s[this.pos + 1] === "'") {
-              value += "'";
-              this.pos += 2;
-              continue;
-            }
-            break;
+      // strings (single-quoted, with prefix/unicode/binary support)
+      if (ch === "'" || ((ch === "N" || ch === "n" || ch === "E" || ch === "e" || ch === "X" || ch === "x") && s[this.pos + 1] === "'") ||
+          ((ch === "U" || ch === "u") && s[this.pos + 1] === "&" && s[this.pos + 2] === "'") ||
+          (ch === "_" && /[A-Za-z0-9:._-]/.test(s[this.pos + 1]))) {
+        let start = this.pos;
+        if (ch === "N" || ch === "n" || ch === "E" || ch === "e" || ch === "X" || ch === "x") {
+          this.pos++;
+        } else if ((ch === "U" || ch === "u") && s[this.pos + 1] === "&") {
+          this.pos += 2;
+        } else if (ch === "_") {
+          this.pos++;
+          while (this.pos < len && /[A-Za-z0-9:._-]/.test(s[this.pos])) {
+            this.pos++;
           }
-          if (s[this.pos] === "\\" && this.pos + 1 < s.length) {
-            value += s[this.pos + 1];
-            this.pos += 2;
-            continue;
+          if (s[this.pos] !== "'") {
+            this.pos = start;
           }
-          value += s[this.pos++];
         }
-        if (s[this.pos] === "'") this.pos++;
-        this.tokens.push({ type: "STRING", value, start, end: this.pos });
-        continue;
+        if (s[this.pos] === "'") {
+          let literal = readQuotedString();
+          let value = literal.value;
+          let p = skipWhitespace(this.pos);
+          while (s[p] === "'") {
+            this.pos = p;
+            const extra = readQuotedString();
+            value += extra.value;
+            p = skipWhitespace(this.pos);
+          }
+          if (startsWithKeywordAt(p, "UESCAPE")) {
+            let q = skipWhitespace(p + "UESCAPE".length);
+            if (s[q] === "'") {
+              this.pos = q;
+              readQuotedString();
+              p = skipWhitespace(this.pos);
+            }
+          }
+          this.pos = p;
+          this.tokens.push({ type: "STRING", value, start, end: this.pos });
+          continue;
+        } else {
+          this.pos = start;
+        }
       }
       // quoted identifiers
-      if (ch === '"' || ch === "`") {
-        const start = this.pos;
-        const quote = ch;
-        let value = "";
-        this.pos++;
-        while (this.pos < s.length) {
-          if (s[this.pos] === quote) {
-            if (s[this.pos + 1] === quote) {
-              value += quote;
-              this.pos += 2;
-              continue;
-            }
-            break;
-          }
-          value += s[this.pos++];
+      if (ch === "[") {
+        const ident = tryReadBracketIdentifier();
+        if (ident) {
+          this.tokens.push({ type: "IDENT", value: ident.value, start: ident.start, end: ident.end });
+          continue;
         }
-        if (s[this.pos] === quote) this.pos++;
-        this.tokens.push({ type: "IDENT", value, start, end: this.pos });
+      }
+      if ((ch === "U" || ch === "u") && s[this.pos + 1] === "&" && s[this.pos + 2] === "\"") {
+        const start = this.pos;
+        this.pos += 2;
+        const { value, end } = readQuotedIdentifier("\"");
+        this.tokens.push({ type: "IDENT", value, start, end });
+        continue;
+      }
+      if (ch === '"' || ch === "`") {
+        const { value, start, end } = readQuotedIdentifier(ch);
+        this.tokens.push({ type: "IDENT", value, start, end });
         continue;
       }
       // numbers (including leading dot and exponent)
@@ -125,8 +216,19 @@ class CalciteLexer {
       if (/[A-Za-z_]/.test(ch)) {
         const start = this.pos;
         let value = "";
-        while (this.pos < s.length && /[A-Za-z0-9_]/.test(s[this.pos])) {
-          value += s[this.pos++];
+        while (this.pos < s.length) {
+          const c = s[this.pos];
+          if (/[A-Za-z0-9_]/.test(c)) {
+            value += c;
+            this.pos++;
+            continue;
+          }
+          if (c === "-" && /[A-Za-z_]/.test(s[this.pos + 1])) {
+            value += c;
+            this.pos++;
+            continue;
+          }
+          break;
         }
         this.tokens.push({ type: "IDENT", value, start, end: this.pos });
         continue;
