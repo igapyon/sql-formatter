@@ -35,8 +35,9 @@ class CalciteLexer {
         if (this.pos < s.length) this.pos += 2;
         continue;
       }
-      // strings (single-quoted, no escape handling)
+      // strings (single-quoted, with simple escape handling)
       if (ch === "'") {
+        const start = this.pos;
         let value = "";
         this.pos++;
         while (this.pos < s.length) {
@@ -56,11 +57,12 @@ class CalciteLexer {
           value += s[this.pos++];
         }
         if (s[this.pos] === "'") this.pos++;
-        this.tokens.push({ type: "STRING", value });
+        this.tokens.push({ type: "STRING", value, start, end: this.pos });
         continue;
       }
       // quoted identifiers
       if (ch === '"' || ch === "`") {
+        const start = this.pos;
         const quote = ch;
         let value = "";
         this.pos++;
@@ -76,11 +78,12 @@ class CalciteLexer {
           value += s[this.pos++];
         }
         if (s[this.pos] === quote) this.pos++;
-        this.tokens.push({ type: "IDENT", value });
+        this.tokens.push({ type: "IDENT", value, start, end: this.pos });
         continue;
       }
       // numbers (including leading dot and exponent)
       if (/[0-9]/.test(ch) || (ch === "." && /[0-9]/.test(s[this.pos + 1]))) {
+        const start = this.pos;
         let value = "";
         if (ch === ".") {
           value += ".";
@@ -115,30 +118,31 @@ class CalciteLexer {
             }
           }
         }
-        this.tokens.push({ type: "NUMBER", value });
+        this.tokens.push({ type: "NUMBER", value, start, end: this.pos });
         continue;
       }
       // identifiers
       if (/[A-Za-z_]/.test(ch)) {
+        const start = this.pos;
         let value = "";
         while (this.pos < s.length && /[A-Za-z0-9_]/.test(s[this.pos])) {
           value += s[this.pos++];
         }
-        this.tokens.push({ type: "IDENT", value });
+        this.tokens.push({ type: "IDENT", value, start, end: this.pos });
         continue;
       }
       // symbols (two-char first)
       const two = s.slice(this.pos, this.pos + 2);
       const twoOps = ["<=", ">=", "<>", "!=", "||", "::", "->", ":="];
       if (twoOps.includes(two)) {
-        this.tokens.push({ type: "SYMBOL", value: two });
+        this.tokens.push({ type: "SYMBOL", value: two, start: this.pos, end: this.pos + 2 });
         this.pos += 2;
         continue;
       }
-      this.tokens.push({ type: "SYMBOL", value: ch });
+      this.tokens.push({ type: "SYMBOL", value: ch, start: this.pos, end: this.pos + 1 });
       this.pos++;
     }
-    this.tokens.push({ type: "EOF", value: null });
+    this.tokens.push({ type: "EOF", value: null, start: this.pos, end: this.pos });
     return this.tokens;
   }
 }
@@ -476,6 +480,22 @@ class CalciteParser {
     if (this.isSymbol("(")) {
       columns = this.ParenthesizedCompoundIdentifierList();
     }
+    const isSourceStart =
+      this.isKeyword("WITH") ||
+      this.isKeyword("SELECT") ||
+      this.isKeyword("VALUES") ||
+      this.isKeyword("VALUE") ||
+      this.isKeyword("TABLE") ||
+      (this.isSymbol("(") && (
+        this.isKeywordAt("WITH", 1) ||
+        this.isKeywordAt("SELECT", 1) ||
+        this.isKeywordAt("VALUES", 1) ||
+        this.isKeywordAt("VALUE", 1) ||
+        this.isKeywordAt("TABLE", 1)
+      ));
+    if (!isSourceStart) {
+      throw new Error("Invalid INSERT source");
+    }
     const source = this.OrderedQueryOrExpr();
     return { type: "SqlInsert", mode, keywords, table, hints, extend, columns, source };
   }
@@ -636,6 +656,16 @@ class CalciteParser {
     while (this.isKeyword("UNION") || this.isKeyword("INTERSECT") || this.isKeyword("EXCEPT")) {
       setOps.push(this.AddSetOpQuery());
     }
+    if (setOps.length > 0) {
+      const isQueryLeaf =
+        leaf &&
+        (leaf.type === "SqlSelect" ||
+          leaf.type === "TableConstructor" ||
+          leaf.type === "ExplicitTable");
+      if (!isQueryLeaf) {
+        throw new Error("SETOP requires query operands");
+      }
+    }
     return { type: "QueryOrExpr", withList, leaf, setOps };
   }
 
@@ -658,6 +688,9 @@ class CalciteParser {
       }
     } else if (this.isKeyword("FETCH")) {
       fetch = this.FetchClause();
+    }
+    if (offset && !orderBy) {
+      throw new Error("OFFSET requires ORDER BY");
     }
     if (fetch && !orderBy) {
       throw new Error("FETCH requires ORDER BY");
@@ -779,6 +812,9 @@ class CalciteParser {
     }
     if (having && !groupBy) {
       throw new Error("HAVING requires GROUP BY");
+    }
+    if (qualify && !from) {
+      throw new Error("QUALIFY requires FROM");
     }
     return {
       type: "SqlSelect",
@@ -2447,7 +2483,7 @@ class CalciteParser {
 
   AddSetOpQuery() {
     const op = this.BinaryQueryOperator();
-    const right = this.LeafQueryOrExpr();
+    const right = this.LeafQuery();
     return { type: "AddSetOpQuery", op, right };
   }
 
