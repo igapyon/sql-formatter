@@ -1,11 +1,13 @@
 'use strict';
 
-const { CalciteLexer, CalciteParser } = require('./spec/apache-calcite-Parser');
+const isBrowser = typeof window !== 'undefined';
+const CalciteLexerRef = isBrowser ? window.CalciteLexer : require('./spec/apache-calcite-Parser').CalciteLexer;
+const CalciteParserRef = isBrowser ? window.CalciteParser : require('./spec/apache-calcite-Parser').CalciteParser;
 
 function formatSql(sql) {
-  const lexer = new CalciteLexer(sql);
+  const lexer = new CalciteLexerRef(sql);
   const tokens = lexer.tokenize();
-  const parser = new CalciteParser(tokens);
+  const parser = new CalciteParserRef(tokens);
   const ast = parser.SqlStmtList();
   return renderNode(ast, { indent: 0 }).trim();
 }
@@ -346,4 +348,9 @@ function indent(ctx, extra = 0) {
   return ' '.repeat((ctx.indent + extra) * 4);
 }
 
-module.exports = { formatSql };
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { formatSql };
+}
+if (typeof window !== 'undefined') {
+  window.formatSql = formatSql;
+}
