@@ -14,6 +14,7 @@
 - `spec/apache-calcite-Parser-test.js`: 回帰/異常系テスト
 - `spec/apache-calcite-Parser.md`: 仕様（EBNFベース）
 - `spec/apache-calcite-Parser.jj`: 参照文法
+- `AST.md`: AST 仕様（暫定）
 
 ## 使い方（開発時）
 テストを実行してパーサーの動作確認ができます。
