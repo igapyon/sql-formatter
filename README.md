@@ -31,5 +31,10 @@ node spec/apache-calcite-Parser-test.js
 - 構文の厳密化（句の順序/排他の追加チェック）
 - 最終的に formatter へ接続
 
+## デモ機能
+- AST の JSON 出力
+- トークン一覧の表示
+- エラートークンのハイライト表示
+
 ## ライセンス
 `LICENSE` を参照してください。
