@@ -27,6 +27,30 @@ WHERE
     expectIncludes: ['SELECT -- keep comment'],
   },
   {
+    name: 'select-group-by',
+    sql: 'SELECT a, b FROM t GROUP BY a, b',
+    expect: `SELECT
+    a
+    , b
+FROM
+    t
+GROUP BY
+    a
+    , b`,
+  },
+  {
+    name: 'select-order-by',
+    sql: 'SELECT a, b FROM t ORDER BY a DESC, b',
+    expect: `SELECT
+    a
+    , b
+FROM
+    t
+ORDER BY
+    a DESC
+    , b`,
+  },
+  {
     name: 'nested-subquery',
     sql: 'SELECT u.name FROM (SELECT id, name FROM users WHERE active = 1) AS u',
     expect: `SELECT
