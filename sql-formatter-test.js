@@ -158,6 +158,26 @@ FROM
     t
 MATCH_RECOGNIZE (PATTERN (A B) DEFINE A AS a > 0, B AS b > 0)`,
   },
+  {
+    name: 'update-set-where',
+    sql: 'UPDATE t SET a = 1, b = 2 WHERE c = 3',
+    expect: `UPDATE
+    t
+SET
+    a = 1
+    , b = 2
+WHERE
+    c = 3`,
+  },
+  {
+    name: 'delete-where',
+    sql: 'DELETE FROM t WHERE a = 1',
+    expect: `DELETE
+FROM
+    t
+WHERE
+    a = 1`,
+  },
 ];
 
 let failed = 0;

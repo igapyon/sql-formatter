@@ -62,6 +62,10 @@ function renderNode(node, ctx) {
       return renderSelect(node, ctx);
     case 'SqlInsert':
       return renderInsert(node, ctx);
+    case 'SqlDelete':
+      return renderDelete(node, ctx);
+    case 'SqlUpdate':
+      return renderUpdate(node, ctx);
     case 'AddSelectItem':
       return renderSelectItem(node, ctx);
     case 'SelectExpression':
@@ -346,6 +350,49 @@ function renderInsert(node, ctx) {
         lines.push(`${indent(ctx)}${sourceText}`);
       }
     }
+  }
+  return lines.join('\n');
+}
+
+function renderDelete(node, ctx) {
+  const lines = [];
+  if (node.hints || node.extend) {
+    markUnknown(ctx);
+  }
+  const tableText = renderNode(node.table, ctx);
+  const alias = node.alias ? (node.alias.value || node.alias.name || node.alias) : null;
+  const tableWithAlias = alias ? `${tableText} ${alias}` : tableText;
+  lines.push('DELETE');
+  lines.push(`${indent(ctx)}FROM`);
+  lines.push(`${indent(ctx, 1)}${tableWithAlias}`);
+  if (node.where) {
+    lines.push(`${indent(ctx)}WHERE`);
+    lines.push(`${indent(ctx, 1)}${renderNode(node.where.expr, withIndent(ctx, ctx.indent + 1))}`);
+  }
+  return lines.join('\n');
+}
+
+function renderUpdate(node, ctx) {
+  const lines = [];
+  if (node.hints || node.extend) {
+    markUnknown(ctx);
+  }
+  const tableText = renderNode(node.table, ctx);
+  const alias = node.alias ? (node.alias.value || node.alias.name || node.alias) : null;
+  const tableWithAlias = alias ? `${tableText} ${alias}` : tableText;
+  lines.push('UPDATE');
+  lines.push(`${indent(ctx, 1)}${tableWithAlias}`);
+  lines.push(`${indent(ctx)}SET`);
+  const assignments = node.assignments || [];
+  assignments.forEach((assign, idx) => {
+    const target = renderNode(assign.target, ctx);
+    const expr = renderNode(assign.expr, ctx);
+    const prefix = idx === 0 ? indent(ctx, 1) : `${indent(ctx, 1)}, `;
+    lines.push(`${prefix}${target} = ${expr}`);
+  });
+  if (node.where) {
+    lines.push(`${indent(ctx)}WHERE`);
+    lines.push(`${indent(ctx, 1)}${renderNode(node.where.expr, withIndent(ctx, ctx.indent + 1))}`);
   }
   return lines.join('\n');
 }
