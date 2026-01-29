@@ -51,5 +51,6 @@
 - CREATE TABLE / CREATE INDEX の整形対応
 - DROP の整形対応
 - INTERVAL リテラルの整形対応
+- 未対応箇所のみ原文保持できるよう、ASTに位置情報(start/end)を付与して部分フォーマットを可能にする
 - index.html に GitHub リポジトリへのリンクアイコン追加
 - index.html の Web デザイン更新

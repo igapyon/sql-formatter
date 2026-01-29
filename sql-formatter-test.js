@@ -111,6 +111,17 @@ GROUP BY
     , b`,
   },
   {
+    name: 'select-count-star',
+    sql: 'SELECT a, COUNT(*) FROM t GROUP BY a',
+    expect: `SELECT
+    a
+    , COUNT(*)
+FROM
+    t
+GROUP BY
+    a`,
+  },
+  {
     name: 'select-order-by',
     sql: 'SELECT a, b FROM t ORDER BY a DESC, b',
     expect: `SELECT
@@ -137,6 +148,15 @@ FROM
         WHERE
             active = 1
     ) u`,
+  },
+  {
+    name: 'select-match-recognize-raw',
+    sql: 'SELECT * FROM t MATCH_RECOGNIZE (PATTERN (A B) DEFINE A AS a > 0, B AS b > 0)',
+    expect: `SELECT
+    *
+FROM
+    t
+MATCH_RECOGNIZE (PATTERN (A B) DEFINE A AS a > 0, B AS b > 0)`,
   },
 ];
 

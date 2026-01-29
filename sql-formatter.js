@@ -5,11 +5,34 @@ const CalciteLexerRef = isBrowser ? window.CalciteLexer : require('./spec/apache
 const CalciteParserRef = isBrowser ? window.CalciteParser : require('./spec/apache-calcite-Parser').CalciteParser;
 
 function formatSql(sql) {
-  const lexer = new CalciteLexerRef(sql);
-  const tokens = lexer.tokenize();
-  const parser = new CalciteParserRef(tokens);
-  const ast = parser.SqlStmtList();
-  return renderNode(ast, { indent: 0 }).trim();
+  try {
+    const lexer = new CalciteLexerRef(sql);
+    const tokens = lexer.tokenize();
+    const parser = new CalciteParserRef(tokens);
+    const ast = parser.SqlStmtList();
+    const ctx = { indent: 0, unknown: false, root: null };
+    let rendered = renderNode(ast, ctx).trim();
+    if (!rendered) return sql;
+    if (ctx.unknown) {
+      const rawSuffix = extractTopLevelSuffix(sql, tokens);
+      if (rawSuffix) {
+        return `${rendered}\n${rawSuffix.trimStart()}`.trimEnd();
+      }
+      return sql;
+    }
+    return rendered;
+  } catch (_err) {
+    return sql;
+  }
+}
+
+function withIndent(ctx, indent) {
+  return { ...ctx, indent, root: ctx.root || ctx };
+}
+
+function markUnknown(ctx) {
+  const root = ctx && (ctx.root || ctx);
+  if (root) root.unknown = true;
 }
 
 function renderNode(node, ctx) {
@@ -47,13 +70,13 @@ function renderNode(node, ctx) {
     case 'TableRef':
       return renderTableRef(node, ctx);
     case 'Subquery': {
-      const inner = renderNode(node.query, { ...ctx, indent: 0 });
+      const inner = renderNode(node.query, withIndent(ctx, 0));
       const pad = indent(ctx, 1);
       const body = inner ? inner.split('\n').map(line => pad + line).join('\n') : pad;
       return `(\n${body}\n${indent(ctx)})`;
     }
     case 'LateralSubquery': {
-      const inner = renderNode(node.query, { ...ctx, indent: 0 });
+      const inner = renderNode(node.query, withIndent(ctx, 0));
       const pad = indent(ctx, 1);
       const body = inner ? inner.split('\n').map(line => pad + line).join('\n') : pad;
       return `LATERAL (\n${body}\n${indent(ctx)})`;
@@ -137,7 +160,27 @@ function renderNode(node, ctx) {
       return renderExpression2b(node, ctx);
     case 'BinaryExpression':
       return `${renderNode(node.left, ctx)} ${renderBinaryOp(node.operator)} ${renderNode(node.right, ctx)}`;
+    case 'NamedFunctionCall': {
+      const base = renderNode(node.namedCall, ctx);
+      if (node.nullTreatment || node.withinDistinct || node.withinGroup || node.filter || node.over) {
+        markUnknown(ctx);
+      }
+      return base;
+    }
+    case 'NamedCall': {
+      const name = renderNode(node.name, ctx);
+      if (node.callType === 'STAR') return `${name}(*)`;
+      if (node.callType === 'PARAMS' && node.params) {
+        return `${name}(${renderNode(node.params, ctx)})`;
+      }
+      if (node.callType === 'DISTINCT_PARAMS' && node.params) {
+        return `${name}(DISTINCT ${renderNode(node.params, ctx)})`;
+      }
+      markUnknown(ctx);
+      return `${name}()`;
+    }
     default:
+      markUnknown(ctx);
       return `[${node.type}]`;
   }
 }
@@ -152,28 +195,49 @@ function renderSelect(node, ctx) {
   const items = node.selectItems || [];
   items.forEach((item, idx) => {
     const prefix = idx === 0 ? indent(ctx, 1) : `${indent(ctx, 1)}, `;
-    lines.push(prefix + renderNode(item, { ...ctx, indent: ctx.indent + 1 }));
+    lines.push(prefix + renderNode(item, withIndent(ctx, ctx.indent + 1)));
   });
   if (node.from) {
     lines.push(`${indent(ctx)}FROM`);
-    lines.push(`${indent(ctx, 1)}${renderNode(node.from, { ...ctx, indent: ctx.indent + 1 })}`);
+    lines.push(`${indent(ctx, 1)}${renderNode(node.from, withIndent(ctx, ctx.indent + 1))}`);
   }
   if (node.where) {
     lines.push(`${indent(ctx)}WHERE`);
-    lines.push(`${indent(ctx, 1)}${renderNode(node.where.expr, { ...ctx, indent: ctx.indent + 1 })}`);
+    lines.push(`${indent(ctx, 1)}${renderNode(node.where.expr, withIndent(ctx, ctx.indent + 1))}`);
   }
   if (node.groupBy) {
     lines.push(`${indent(ctx)}${renderNode(node.groupBy, ctx)}`);
   }
   if (node.having) {
-    lines.push(`${indent(ctx)}${renderNode(node.having, { ...ctx, indent: ctx.indent + 1 })}`);
+    lines.push(`${indent(ctx)}${renderNode(node.having, withIndent(ctx, ctx.indent + 1))}`);
   }
   if (node.orderBy) {
     lines.push(`${indent(ctx)}${renderNode(node.orderBy, ctx)}`);
   }
+  if (node.window || node.qualify) {
+    markUnknown(ctx);
+  }
   return lines.join('\n');
 }
 
+function extractTopLevelSuffix(sql, tokens) {
+  let depth = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.type === "SYMBOL") {
+      if (t.value === "(") depth++;
+      if (t.value === ")") depth = Math.max(0, depth - 1);
+    }
+    if (depth !== 0) continue;
+    if (t.type === "IDENT") {
+      const kw = String(t.value).toUpperCase();
+      if (kw === "WINDOW" || kw === "QUALIFY" || kw === "MATCH_RECOGNIZE" || kw === "PIVOT" || kw === "UNPIVOT" || kw === "TABLESAMPLE") {
+        return sql.slice(t.start).trimEnd();
+      }
+    }
+  }
+  return null;
+}
 function renderSelectItem(node, ctx) {
   const expr = renderNode(node.expr, ctx);
   if (node.alias) return `${expr} AS ${node.alias.name || node.alias}`;
@@ -188,6 +252,9 @@ function renderFrom(node, ctx) {
 
 function renderTableRef(node, ctx) {
   if (node.base) {
+    if (node.matchRecognize || node.pivot || node.unpivot || node.tablesample || node.snapshot || node.over || node.tableOverOpt || node.extend || node.hints) {
+      markUnknown(ctx);
+    }
     const base = renderNode(node.base, ctx);
     const alias = node.alias ? (node.alias.value || node.alias.name || node.alias) : null;
     return alias ? `${base} ${alias}` : base;
@@ -254,7 +321,7 @@ function renderInsert(node, ctx) {
   lines.push(`${indent(ctx)}INTO`);
   lines.push(`${indent(ctx, 1)}${renderNode(node.table, ctx)}`);
   if (node.columns) {
-    const cols = renderNode(node.columns, { ...ctx, indent: ctx.indent + 1 });
+    const cols = renderNode(node.columns, withIndent(ctx, ctx.indent + 1));
     lines.push(cols);
   }
   if (node.source) {
@@ -268,7 +335,7 @@ function renderInsert(node, ctx) {
         lines.push(renderValuesRow(row, ctx));
       });
     } else {
-      const sourceText = renderNode(node.source, { ...ctx, indent: 0 }).trim();
+      const sourceText = renderNode(node.source, withIndent(ctx, 0)).trim();
       if (sourceText.startsWith('VALUES ')) {
         const rest = sourceText.slice('VALUES '.length);
         lines.push(`${indent(ctx)}VALUES`);
@@ -313,7 +380,7 @@ function renderJoin(node, ctx) {
   const base = `${node.joinType} ${renderNode(node.table, ctx)}`;
   if (!node.condition) return base;
   if (node.condition.type === 'On') {
-    const expr = renderNode(node.condition.expr, { ...ctx, indent: ctx.indent + 1 });
+    const expr = renderNode(node.condition.expr, withIndent(ctx, ctx.indent + 1));
     return `${base}\n${indent(ctx, 1)}ON ${expr}`;
   }
   if (node.condition.type === 'Using') {
