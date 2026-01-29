@@ -13,6 +13,7 @@
 - `spec/apache-calcite-Parser.js`: パーサー本体（lexer + parser）
 - `spec/apache-calcite-Parser-test.js`: 回帰/異常系テスト
 - `spec/apache-calcite-Parser.md`: 仕様（EBNFベース）
+- `spec/wellknown-sql-ddl.md`: DDL 仕様（EBNFベース、ANSI SQL 風。元仕様が異なるため `apache-calcite-Parser.md` と統合しない）
 - `spec/apache-calcite-Parser.jj`: 参照文法
 - `AST.md`: AST 仕様（暫定）
 - `FORMATTER_RULES.md`: SQL Formatter の出力ルール
