@@ -3,6 +3,8 @@
 const isBrowser = typeof window !== 'undefined';
 const CalciteLexerRef = isBrowser ? window.CalciteLexer : require('./spec/apache-calcite-Parser').CalciteLexer;
 const CalciteParserRef = isBrowser ? window.CalciteParser : require('./spec/apache-calcite-Parser').CalciteParser;
+const WellknownDdlLexerRef = isBrowser ? window.WellknownDdlLexer : require('./spec/wellknown-sql-ddl').WellknownDdlLexer;
+const WellknownDdlParserRef = isBrowser ? window.WellknownDdlParser : require('./spec/wellknown-sql-ddl').WellknownDdlParser;
 
 function formatSql(sql) {
   try {
@@ -22,7 +24,19 @@ function formatSql(sql) {
     }
     return rendered;
   } catch (_err) {
-    return sql;
+    // Calcite parser failed, try DDL parser
+    try {
+      const ddlLexer = new WellknownDdlLexerRef(sql);
+      const ddlTokens = ddlLexer.tokenize();
+      const ddlParser = new WellknownDdlParserRef(ddlTokens);
+      const ddlAst = ddlParser.SqlStmtList();
+      const ctx = { indent: 0, unknown: false, root: null };
+      const rendered = renderNode(ddlAst, ctx).trim();
+      if (!rendered || ctx.unknown) return sql;
+      return rendered;
+    } catch (_ddlErr) {
+      return sql;  // Both parsers failed
+    }
   }
 }
 
@@ -151,7 +165,11 @@ function renderNode(node, ctx) {
     case 'Identifier':
       return node.value || node.name;
     case 'CompoundIdentifier':
-      return node.parts.map(p => (p.type === 'Identifier' ? (p.value || p.name) : '*')).join('.');
+      return node.parts.map(p => {
+        if (typeof p === 'string') return p;
+        if (p.type === 'Identifier') return p.value || p.name;
+        return '*';
+      }).join('.');
     case 'ParenthesizedExpression':
       return `(${renderNode(node.node, ctx)})`;
     case 'ParenExpression':
@@ -183,18 +201,167 @@ function renderNode(node, ctx) {
       markUnknown(ctx);
       return `${name}()`;
     }
+    // DDL Statement Types
+    case 'DropTableStmt':
+      return renderDropTable(node, ctx);
+    case 'CreateTableStmt':
+      return renderCreateTable(node, ctx);
+    case 'CreateIndexStmt':
+      return renderCreateIndex(node, ctx);
+    case 'AlterTableStmt':
+      return renderAlterTable(node, ctx);
+    case 'TruncateTableStmt':
+      return renderTruncateTable(node, ctx);
+    case 'CreateViewStmt':
+      return renderCreateView(node, ctx);
     default:
       markUnknown(ctx);
       return `[${node.type}]`;
   }
 }
 
+// ============================================================================
+// DDL Renderer Functions
+// ============================================================================
+
+function renderDropTable(node, ctx) {
+  let line = 'DROP TABLE';
+  if (node.ifExists) line += ' IF EXISTS';
+  line += ` ${renderNode(node.name, ctx)}`;
+  if (node.option) line += ` ${node.option}`;  // CASCADE or RESTRICT
+  return line;
+}
+
+function renderCreateTable(node, ctx) {
+  const lines = [];
+
+  // CREATE [TEMPORARY] TABLE [IF NOT EXISTS] name
+  let createLine = 'CREATE';
+  if (node.temp) createLine += ' TEMPORARY';
+  createLine += ' TABLE';
+  if (node.ifNotExists) createLine += ' IF NOT EXISTS';
+  createLine += ` ${renderNode(node.name, ctx)}`;
+  lines.push(createLine);
+
+  // Table elements (columns)
+  if (node.body && node.body.type === 'TableElements') {
+    lines.push(`${indent(ctx, 1)}(`);
+    if (node.body.elements && node.body.elements.length > 0) {
+      lines.push(`${indent(ctx, 2)}${node.body.elements[0]}`);
+      for (let i = 1; i < node.body.elements.length; i++) {
+        lines.push(`${indent(ctx, 2)}, ${node.body.elements[i]}`);
+      }
+    }
+    lines.push(`${indent(ctx, 1)})`);
+  }
+  // AS query
+  else if (node.body && node.body.type === 'AsQuery') {
+    lines.push(`${indent(ctx, 1)}AS`);
+    lines.push(`${indent(ctx, 2)}${node.body.raw.trim()}`);
+  }
+  // LIKE table
+  else if (node.body && node.body.type === 'LikeTable') {
+    lines.push(`${indent(ctx, 1)}LIKE ${renderNode(node.body.like, ctx)}`);
+    if (node.body.raw && node.body.raw.trim()) {
+      lines.push(`${indent(ctx, 2)}${node.body.raw.trim()}`);
+    }
+  }
+
+  // Trailing options (ENGINE, CHARSET, etc.)
+  if (node.raw && node.raw.trim()) {
+    lines.push(`${indent(ctx, 1)}${node.raw.trim()}`);
+  }
+
+  return lines.join('\n');
+}
+
+function renderCreateIndex(node, ctx) {
+  const lines = [];
+
+  // CREATE [UNIQUE] INDEX [IF NOT EXISTS] name
+  let createLine = 'CREATE';
+  if (node.unique) createLine += ' UNIQUE';
+  createLine += ' INDEX';
+  if (node.ifNotExists) createLine += ' IF NOT EXISTS';
+  createLine += ` ${renderNode(node.name, ctx)}`;
+  lines.push(createLine);
+
+  // ON table
+  lines.push(`ON ${renderNode(node.table, ctx)}`);
+
+  // Column list
+  lines.push(`${indent(ctx, 1)}(`);
+  if (node.elements && node.elements.length > 0) {
+    lines.push(`${indent(ctx, 2)}${node.elements[0]}`);
+    for (let i = 1; i < node.elements.length; i++) {
+      lines.push(`${indent(ctx, 2)}, ${node.elements[i]}`);
+    }
+  }
+  lines.push(`${indent(ctx, 1)})`);
+
+  // Trailing options
+  if (node.raw && node.raw.trim()) {
+    lines.push(`${indent(ctx, 1)}${node.raw.trim()}`);
+  }
+
+  return lines.join('\n');
+}
+
+function renderAlterTable(node, ctx) {
+  const lines = [];
+  let alterLine = 'ALTER TABLE';
+  if (node.ifExists) alterLine += ' IF EXISTS';
+  alterLine += ` ${renderNode(node.name, ctx)}`;
+  lines.push(alterLine);
+
+  // Raw action (ADD COLUMN, DROP COLUMN, etc.)
+  if (node.raw && node.raw.trim()) {
+    lines.push(`${indent(ctx, 1)}${node.raw.trim()}`);
+  }
+
+  return lines.join('\n');
+}
+
+function renderTruncateTable(node, ctx) {
+  let line = 'TRUNCATE TABLE ' + renderNode(node.name, ctx);
+  if (node.option) line += ` ${node.option}`;
+  return line;
+}
+
+function renderCreateView(node, ctx) {
+  const lines = [];
+  let createLine = 'CREATE';
+  if (node.orReplace) createLine += ' OR REPLACE';
+  createLine += ' VIEW';
+  if (node.ifNotExists) createLine += ' IF NOT EXISTS';
+  createLine += ` ${renderNode(node.name, ctx)}`;
+  lines.push(createLine);
+
+  // Column list (optional)
+  if (node.columns && node.columns.length > 0) {
+    const cols = node.columns.map(c => c.value).join(', ');
+    lines.push(`${indent(ctx, 1)}(${cols})`);
+  }
+
+  // AS query
+  lines.push(`AS`);
+  if (node.raw && node.raw.trim()) {
+    lines.push(`${indent(ctx, 1)}${node.raw.trim()}`);
+  }
+
+  return lines.join('\n');
+}
+
 function renderSelect(node, ctx) {
   const lines = [];
+  let selectKeyword = 'SELECT';
+  if (node.setQuantifier && node.setQuantifier === 'DISTINCT') {
+    selectKeyword = 'SELECT DISTINCT';
+  }
   if (node.selectComments && node.selectComments.length > 0) {
-    lines.push(`SELECT -- ${node.selectComments.join(' ')}`);
+    lines.push(`${selectKeyword} -- ${node.selectComments.join(' ')}`);
   } else {
-    lines.push('SELECT');
+    lines.push(selectKeyword);
   }
   const items = node.selectItems || [];
   items.forEach((item, idx) => {

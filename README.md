@@ -25,9 +25,17 @@
 ## 使い方（開発時）
 テストを実行してパーサーの動作確認ができます。
 
+### 実行コマンド
 ```bash
 node spec/apache-calcite-Parser-test.js
+node sql-formatter-test.js
 ```
+
+### 開発時の基本方針
+- `.md` と `.js` の production 名は一致させる
+- パーサー変更時は `node spec/apache-calcite-Parser-test.js` を実行
+- フォーマッター変更時は `node sql-formatter-test.js` も実行
+- 破壊的変更は `TODO.md` に記録
 
 ## 直近の作業予定
 - **index-parser.html**: SQL → AST を出力する簡易デモ（実装済み）
