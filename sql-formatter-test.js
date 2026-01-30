@@ -465,6 +465,51 @@ FROM
             ) t2
     ) t1`,
   },
+  {
+    name: 'nested-in-subquery-two-levels',
+    category: 'subqueries',
+    description: 'Nested IN subqueries with two levels',
+    sql: 'SELECT id FROM t1 WHERE id IN (SELECT id FROM t2 WHERE id IN (SELECT id FROM t3))',
+    expect: `SELECT
+    id
+FROM
+    t1
+WHERE
+    id IN (
+        SELECT
+            id
+        FROM
+            t2
+        WHERE
+            id IN (
+                SELECT
+                    id
+                FROM
+                    t3
+            )
+    )`,
+  },
+  {
+    name: 'where-with-and-or-in-subquery',
+    category: 'subqueries',
+    description: 'Complex WHERE with AND/OR and IN subquery',
+    sql: 'SELECT id FROM orders WHERE status = 1 AND id IN (SELECT order_id FROM shipped) AND total > 100',
+    expect: `SELECT
+    id
+FROM
+    orders
+WHERE
+    status = 1
+    AND
+        id IN (
+        SELECT
+            order_id
+        FROM
+            shipped
+    )
+    AND
+        total > 100`,
+  },
 ];
 
 // ============================================================================
@@ -495,6 +540,21 @@ const aggregationTests = [
     sql: 'SELECT COUNT(DISTINCT user_id) FROM orders',
     expectedBehavior: 'partial',
     expectIncludes: ['SELECT', 'COUNT', 'DISTINCT', 'FROM'],
+  },
+  {
+    name: 'multiple-aggregates-with-distinct',
+    category: 'aggregation',
+    description: 'Multiple aggregate functions with DISTINCT and GROUP BY',
+    sql: 'SELECT user_id, COUNT(DISTINCT order_id), SUM(amount), AVG(amount) FROM sales GROUP BY user_id',
+    expect: `SELECT
+    user_id
+    , COUNT(DISTINCT order_id)
+    , SUM(amount)
+    , AVG(amount)
+FROM
+    sales
+GROUP BY
+    user_id`,
   },
 ];
 
