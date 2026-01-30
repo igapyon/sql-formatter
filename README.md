@@ -145,6 +145,24 @@ const allTestGroups = [
 - `indent(ctx, extra)`: インデント生成ヘルパー
 - `markUnknown(ctx)`: 未実装ノード型のマーク
 
+### Pull Request 作成時の注意事項
+**`gh` コマンドで自動的に PR を作成しないでください。**
+
+PR 作成する場合は、以下のいずれかの方法を使用してください：
+
+1. **GitHub Web UI での手動作成（推奨）**
+   - 提供される PR テンプレートテキストをコピー
+   - GitHub Web にブラウザでアクセス
+   - "New Pull Request" ボタンで新規 PR を作成
+   - テンプレートテキストを PR Description に貼付
+
+2. **ローカルでの branch / commit 作成のみ実施**
+   - 機能実装と commit までを完了
+   - PR テンプレートを生成
+   - 実際の PR 作成はユーザーが GitHub Web UI で実施
+
+**理由**: ユーザーの CI/CD パイプライン、approval flow、branch protection など、リポジトリ固有の PR プロセスに合わせる必要があるため、自動 PR 作成ではなく手動作成が前提です。
+
 ## デモ機能
 - AST の JSON 出力
 - トークン一覧の表示
