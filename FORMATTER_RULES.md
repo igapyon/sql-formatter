@@ -49,9 +49,57 @@ WHERE a = 1
   AND b = 2
 ```
 
-## TODO
-- サブクエリ・括弧のインデント方針
-- 関数引数の改行ルール
-- CASE 式の整形ルール
-- SETOP（UNION/INTERSECT/EXCEPT）の改行規則
-- WINDOW 句/OVER 句の改行規則
+## DDL ステートメント
+
+DDL（CREATE/ALTER/DROP TABLE など）のフォーマットルール：
+
+### 基本スタイル
+- キーワード: **大文字**（CREATE, TABLE, DROP など）
+- インデント: **4 スペース**（DML と同じ）
+- カンマ位置: **先頭**（リスト内）
+
+### 複数行構造
+- トップレベルキーワードは独立した行
+- テーブル名と句はインデント
+- 括弧内リスト（カラム定義など）はネストインデント
+
+### 例
+
+**DROP TABLE**
+```sql
+DROP TABLE IF EXISTS orders CASCADE
+```
+
+**CREATE TABLE**
+```sql
+CREATE TABLE users
+    (
+        id INT
+        , name VARCHAR(100)
+    )
+```
+
+**CREATE INDEX**
+```sql
+CREATE UNIQUE INDEX idx_email
+ON users
+    (
+        email
+    )
+```
+
+**ALTER TABLE**
+```sql
+ALTER TABLE users
+    ADD COLUMN age INT
+```
+
+## パススルー（未実装）
+
+以下の機能はフォーマット未実装です。元の SQL がそのまま返されます：
+
+- **CASE 式**: `CASE WHEN ... THEN ... ELSE ... END`
+- **SETOP**: UNION, UNION ALL, INTERSECT, EXCEPT
+- **WINDOW 関数**: `OVER (PARTITION BY ... ORDER BY ...)`
+- **CTE**: `WITH ... AS (...) SELECT ...`
+- **関数引数の複雑な改行ルール**
