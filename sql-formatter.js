@@ -88,16 +88,16 @@ function renderNode(node, ctx) {
     case 'TableRef':
       return renderTableRef(node, ctx);
     case 'Subquery': {
+      const baseIndent = indent(ctx, 1);
       const inner = renderNode(node.query, withIndent(ctx, 0));
-      const pad = indent(ctx, 1);
-      const body = inner ? inner.split('\n').map(line => pad + line).join('\n') : pad;
-      return `(\n${body}\n${indent(ctx)})`;
+      const lines = inner ? inner.split('\n').map(line => baseIndent + line) : [baseIndent];
+      return `(\n${lines.join('\n')}\n${indent(ctx)})`;
     }
     case 'LateralSubquery': {
+      const baseIndent = indent(ctx, 1);
       const inner = renderNode(node.query, withIndent(ctx, 0));
-      const pad = indent(ctx, 1);
-      const body = inner ? inner.split('\n').map(line => pad + line).join('\n') : pad;
-      return `LATERAL (\n${body}\n${indent(ctx)})`;
+      const lines = inner ? inner.split('\n').map(line => baseIndent + line) : [baseIndent];
+      return `LATERAL (\n${lines.join('\n')}\n${indent(ctx)})`;
     }
     case 'TableName':
       return renderNode(node.name, ctx);
@@ -180,8 +180,20 @@ function renderNode(node, ctx) {
       return '';
     case 'Expression2b':
       return renderExpression2b(node, ctx);
-    case 'BinaryExpression':
-      return `${renderNode(node.left, ctx)} ${renderBinaryOp(node.operator)} ${renderNode(node.right, ctx)}`;
+    case 'BinaryExpression': {
+      const op = renderBinaryOp(node.operator);
+      const isLogicalOp = op && /^(AND|OR)$/i.test(op);
+
+      if (isLogicalOp) {
+        const left = renderNode(node.left, ctx);
+        const right = renderNode(node.right, ctx);
+        return `${left}\n${indent(ctx)}${op}\n${indent(ctx, 1)}${right}`;
+      }
+
+      return `${renderNode(node.left, ctx)} ${op} ${renderNode(node.right, ctx)}`;
+    }
+    case 'InPredicate':
+      return renderInPredicate(node, ctx);
     case 'NamedFunctionCall': {
       const base = renderNode(node.namedCall, ctx);
       if (node.nullTreatment || node.withinDistinct || node.withinGroup || node.filter || node.over) {
@@ -200,6 +212,17 @@ function renderNode(node, ctx) {
       }
       markUnknown(ctx);
       return `${name}()`;
+    }
+    case 'FunctionParameterList': {
+      const quantifier = node.quantifier ? `${node.quantifier} ` : '';
+      const args = node.args ? node.args.map(arg => renderNode(arg, ctx)).join(', ') : '';
+      return `${quantifier}${args}`;
+    }
+    case 'Arg': {
+      if (node.name) {
+        return `${renderNode(node.name, ctx)} => ${renderNode(node.expr, ctx)}`;
+      }
+      return renderNode(node.expr, ctx);
     }
     // DDL Statement Types
     case 'DropTableStmt':
@@ -623,6 +646,24 @@ function renderBinaryOp(op) {
   if (!op) return '';
   if (typeof op === 'string') return op;
   return op.op || '';
+}
+
+function renderInPredicate(node, ctx) {
+  const left = renderNode(node.left, ctx);
+  const notKeyword = node.not ? 'NOT ' : '';
+  // source can be a subquery (OrderedQueryOrExpr) or a value list
+  if (node.source.type === 'OrderedQueryOrExpr' || node.source.type === 'QueryOrExpr') {
+    const baseIndent = indent(ctx, 1);
+    const inner = renderNode(node.source, withIndent(ctx, 0));
+    if (!inner) {
+      markUnknown(ctx);
+      return `${left} ${notKeyword}IN (/* unknown */)`;
+    }
+    const lines = inner.split('\n').map(line => baseIndent + line);
+    return `${left} ${notKeyword}IN (\n${lines.join('\n')}\n${indent(ctx)})`;
+  }
+  const source = renderNode(node.source, ctx);
+  return `${left} ${notKeyword}IN ${source}`;
 }
 
 function indent(ctx, extra = 0) {
