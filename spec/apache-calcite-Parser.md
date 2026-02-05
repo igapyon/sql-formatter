@@ -560,6 +560,7 @@ nullTreatment                            ::= NullTreatment
 JdbcFunctionCall                         ::= "{fn" CompoundIdentifier "(" [ Expression { "," Expression } ] ")" "}"
 
 DynamicParam                             ::= "?" | ":" UnsignedIntLiteral
+                                          | ":" SimpleIdentifier | "@" SimpleIdentifier
 CursorExpression                         ::= "CURSOR" "(" OrderedQueryOrExpr ")"
 ContextVariable                          ::= "CURRENT_USER" | "CURRENT_DATE" | "CURRENT_TIME"
                      | "CURRENT_TIMESTAMP" | "LOCALTIME" | "LOCALTIMESTAMP"

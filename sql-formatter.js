@@ -22,6 +22,8 @@ function formatSql(sql) {
       }
       return sql;
     }
+    const lineComments = collectLineComments(sql, tokens);
+    rendered = applyLineComments(rendered, lineComments);
     return rendered;
   } catch (_err) {
     // Calcite parser failed, try DDL parser
@@ -42,6 +44,63 @@ function formatSql(sql) {
 
 function withIndent(ctx, indent) {
   return { ...ctx, indent, root: ctx.root || ctx };
+}
+
+function tryFormatQuery(sql) {
+  try {
+    const lexer = new CalciteLexerRef(sql);
+    const tokens = lexer.tokenize();
+    const parser = new CalciteParserRef(tokens);
+    const ast = parser.SqlStmtList();
+    const ctx = { indent: 0, unknown: false, root: null };
+    const rendered = renderNode(ast, ctx).trim();
+    if (!rendered || ctx.unknown) return null;
+    return rendered;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function collectLineComments(sql, tokens) {
+  const comments = [];
+  if (!tokens || tokens.length === 0) return comments;
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (!t || t.type !== 'COMMENT_LINE') continue;
+    const lineStart = sql.lastIndexOf('\n', t.start - 1) + 1;
+    const before = sql.slice(lineStart, t.start);
+    if (!before.trim()) continue; // skip full-line comments
+    let j = i - 1;
+    while (j >= 0 && tokens[j] && tokens[j].type === 'COMMENT_LINE') j--;
+    const prev = tokens[j];
+    if (!prev || prev.start == null || prev.end == null) continue;
+    const anchorRaw = sql.slice(prev.start, prev.end).trim();
+    if (!anchorRaw) continue;
+    comments.push({ anchorRaw, text: t.value || '' });
+  }
+  return comments;
+}
+
+function applyLineComments(rendered, comments) {
+  if (!comments || comments.length === 0) return rendered;
+  const lines = rendered.split('\n');
+  for (const c of comments) {
+    let idx = -1;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const trimmed = lines[i].trim();
+      if (trimmed === c.anchorRaw) { idx = i; break; }
+    }
+    if (idx === -1) {
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const trimmed = lines[i].trim();
+        if (trimmed.endsWith(c.anchorRaw)) { idx = i; break; }
+      }
+    }
+    if (idx === -1) continue;
+    if (lines[idx].includes('--')) continue;
+    lines[idx] = `${lines[idx]} -- ${c.text}`.trimEnd();
+  }
+  return lines.join('\n');
 }
 
 function markUnknown(ctx) {
@@ -71,6 +130,9 @@ function renderNode(node, ctx) {
       return lines.filter(Boolean).join('\n');
     }
     case 'QueryOrExpr':
+      if (node.setOps && node.setOps.length) {
+        markUnknown(ctx);
+      }
       return renderNode(node.leaf, ctx);
     case 'SqlSelect':
       return renderSelect(node, ctx);
@@ -80,6 +142,8 @@ function renderNode(node, ctx) {
       return renderDelete(node, ctx);
     case 'SqlUpdate':
       return renderUpdate(node, ctx);
+    case 'SqlMerge':
+      return renderMerge(node, ctx);
     case 'AddSelectItem':
       return renderSelectItem(node, ctx);
     case 'SelectExpression':
@@ -102,7 +166,7 @@ function renderNode(node, ctx) {
     case 'TableName':
       return renderNode(node.name, ctx);
     case 'CompoundTableIdentifier':
-      return node.parts.map(p => (p.type === 'Identifier' ? (p.value || p.name) : '*')).join('.');
+      return node.parts.map(p => (p.type === 'Identifier' ? renderNode(p, ctx) : '*')).join('.');
     case 'JoinTable':
       return renderJoin(node, ctx);
     case 'CommaJoin':
@@ -113,6 +177,8 @@ function renderNode(node, ctx) {
       return `WHERE ${renderNode(node.expr, ctx)}`;
     case 'GroupBy':
       return renderGroupBy(node, ctx);
+    case 'Having':
+      return `HAVING ${renderNode(node.expr, ctx)}`;
     case 'OrderBy':
       return renderOrderBy(node, ctx);
     case 'OrderItemList':
@@ -129,9 +195,14 @@ function renderNode(node, ctx) {
       if (node.kind === 'EXPR') return renderNode(node.expr, ctx);
       if (node.kind === 'ROW') return `ROW ${renderNode(node.list, ctx)}`;
       if (node.kind === 'PAREN_ROW') return `(ROW ${renderNode(node.list, ctx)})`;
+      if (!node.list) markUnknown(ctx);
       return renderNode(node.list, ctx);
     case 'ParenthesizedCompoundIdentifierList':
       return renderParenList(node.items, ctx, (it) => renderNode(it, ctx));
+    case 'ParenthesizedSimpleIdentifierList':
+      return renderParenList(node.items, ctx, (it) => renderNode(it, ctx));
+    case 'ExpressionCommaList':
+      return renderParenList(node.expressions, ctx, (it) => renderNode(it, ctx));
     case 'AddCompoundIdentifierType': {
       const name = renderNode(node.name, ctx);
       const dataType = node.dataType ? ` ${renderNode(node.dataType, ctx)}` : '';
@@ -140,12 +211,15 @@ function renderNode(node, ctx) {
     case 'TableConstructor':
       return `${node.kind} ${node.rows.map(r => renderNode(r, ctx)).join(', ')}`;
     case 'StringLiteral':
-      return `'${node.value}'`;
+      return `'${String(node.value).replace(/'/g, "''")}'`;
     case 'NumericLiteral':
-      if (node.value && typeof node.value === 'object' && node.value.value !== undefined) {
-        return String(node.value.value);
+      {
+        const sign = node.sign ? String(node.sign) : '';
+        if (node.value && typeof node.value === 'object' && node.value.value !== undefined) {
+          return `${sign}${node.value.value}`;
+        }
+        return `${sign}${node.value}`;
       }
-      return String(node.value);
     case 'UnsignedNumericLiteral':
       return String(node.value);
     case 'Literal':
@@ -162,21 +236,81 @@ function renderNode(node, ctx) {
         return `${node.kind}${local} ${renderNode(node.value, ctx)}`;
       }
       return `${node.kind} ${renderNode(node.value, ctx)}`;
+    case 'IntervalLiteral':
+    case 'IntervalLiteralOrExpression': {
+      const sign = node.sign ? `${node.sign} ` : '';
+      const valueNode = node.literal || node.value;
+      const value = renderNode(valueNode, ctx);
+      const qualifier = node.qualifier ? renderNode(node.qualifier, ctx) : '';
+      const parts = [`INTERVAL`, `${sign}${value}`.trim()];
+      if (qualifier) parts.push(qualifier);
+      return parts.join(' ');
+    }
+    case 'IntervalQualifier': {
+      let text = node.unit;
+      if (node.unit === 'SECOND') {
+        if (node.precision && node.scale) {
+          text += `(${node.precision.value}, ${node.scale.value})`;
+        } else if (node.precision) {
+          text += `(${node.precision.value})`;
+        }
+      } else if (node.precision) {
+        text += `(${node.precision.value})`;
+      }
+      if (node.to) {
+        text += ` TO ${node.to}`;
+      }
+      return text;
+    }
+    case 'DynamicParam':
+      if (node.raw) return node.raw;
+      if (node.kind === 'QMARK') return '?';
+      if (node.kind === 'INDEXED' && node.index) return `:${node.index.value}`;
+      if (node.kind === 'DOLLAR_INDEX' && node.index) return `$${node.index.value}`;
+      if (node.kind === 'NAMED' && node.name) return `:${node.name}`;
+      return '?';
     case 'Identifier':
+      if (node.quoted === '"') {
+        const value = (node.value || node.name || '').replace(/"/g, '""');
+        return `"${value}"`;
+      }
       return node.value || node.name;
     case 'CompoundIdentifier':
       return node.parts.map(p => {
         if (typeof p === 'string') return p;
-        if (p.type === 'Identifier') return p.value || p.name;
+        if (p.type === 'Identifier') return renderNode(p, ctx);
         return '*';
       }).join('.');
     case 'ParenthesizedExpression':
-      return `(${renderNode(node.node, ctx)})`;
-    case 'ParenExpression':
-      return `(${renderNode(node.node, ctx)})`;
+    case 'ParenExpression': {
+      // Avoid double-wrapping when parser emits nested paren nodes
+      if (node.node && (node.node.type === 'ParenthesizedExpression' || node.node.type === 'ParenExpression')) {
+        return renderNode(node.node, ctx);
+      }
+      if (node.node && node.node.type === 'ExpressionCommaList') {
+        const list = node.node.expressions || [];
+        if (list.length === 1) {
+          const inner = renderNode(list[0], withIndent(ctx, 0));
+          if (inner.includes('\n')) {
+            const lines = inner.split('\n').map(line => `${indent(ctx, 2)}${line}`);
+            return `(\n${lines.join('\n')}\n${indent(ctx, 1)})`;
+          }
+          return `(${inner})`;
+        }
+        // ExpressionCommaList already renders with parentheses
+        return renderNode(node.node, ctx);
+      }
+      const inner = renderNode(node.node, withIndent(ctx, 0));
+      if (inner.includes('\n')) {
+        const lines = inner.split('\n').map(line => `${indent(ctx, 2)}${line}`);
+        return `(\n${lines.join('\n')}\n${indent(ctx, 1)})`;
+      }
+      return `(${inner})`;
+    }
     case 'AddGroupingElement':
       if (node.kind === 'EXPR') return renderNode(node.expr, ctx);
       if (node.list) return renderNode(node.list, ctx);
+      markUnknown(ctx);
       return '';
     case 'Expression2b':
       return renderExpression2b(node, ctx);
@@ -210,6 +344,7 @@ function renderNode(node, ctx) {
       if (node.callType === 'DISTINCT_PARAMS' && node.params) {
         return `${name}(DISTINCT ${renderNode(node.params, ctx)})`;
       }
+      if (node.callType === 'EMPTY') return `${name}()`;
       markUnknown(ctx);
       return `${name}()`;
     }
@@ -248,11 +383,13 @@ function renderNode(node, ctx) {
 // ============================================================================
 
 function renderDropTable(node, ctx) {
+  const lines = [];
   let line = 'DROP TABLE';
   if (node.ifExists) line += ' IF EXISTS';
-  line += ` ${renderNode(node.name, ctx)}`;
-  if (node.option) line += ` ${node.option}`;  // CASCADE or RESTRICT
-  return line;
+  lines.push(line);
+  lines.push(`${indent(ctx, 1)}${renderNode(node.name, ctx)}`);
+  if (node.option) lines.push(`${indent(ctx, 1)}${node.option}`);  // CASCADE or RESTRICT
+  return lines.join('\n');
 }
 
 function renderCreateTable(node, ctx) {
@@ -263,8 +400,8 @@ function renderCreateTable(node, ctx) {
   if (node.temp) createLine += ' TEMPORARY';
   createLine += ' TABLE';
   if (node.ifNotExists) createLine += ' IF NOT EXISTS';
-  createLine += ` ${renderNode(node.name, ctx)}`;
   lines.push(createLine);
+  lines.push(`${indent(ctx, 1)}${renderNode(node.name, ctx)}`);
 
   // Table elements (columns)
   if (node.body && node.body.type === 'TableElements') {
@@ -280,7 +417,15 @@ function renderCreateTable(node, ctx) {
   // AS query
   else if (node.body && node.body.type === 'AsQuery') {
     lines.push(`${indent(ctx, 1)}AS`);
-    lines.push(`${indent(ctx, 2)}${node.body.raw.trim()}`);
+    const raw = node.body.raw ? node.body.raw.trim() : '';
+    const formatted = raw ? tryFormatQuery(raw) : null;
+    const body = formatted || raw;
+    const bodyLines = body ? body.split('\n') : [];
+    if (bodyLines.length === 0) {
+      lines.push(`${indent(ctx, 2)}`);
+    } else {
+      bodyLines.forEach(line => lines.push(`${indent(ctx, 2)}${line}`));
+    }
   }
   // LIKE table
   else if (node.body && node.body.type === 'LikeTable') {
@@ -306,8 +451,8 @@ function renderCreateIndex(node, ctx) {
   if (node.unique) createLine += ' UNIQUE';
   createLine += ' INDEX';
   if (node.ifNotExists) createLine += ' IF NOT EXISTS';
-  createLine += ` ${renderNode(node.name, ctx)}`;
   lines.push(createLine);
+  lines.push(`${indent(ctx, 1)}${renderNode(node.name, ctx)}`);
 
   // ON table
   lines.push(`ON ${renderNode(node.table, ctx)}`);
@@ -334,8 +479,8 @@ function renderAlterTable(node, ctx) {
   const lines = [];
   let alterLine = 'ALTER TABLE';
   if (node.ifExists) alterLine += ' IF EXISTS';
-  alterLine += ` ${renderNode(node.name, ctx)}`;
   lines.push(alterLine);
+  lines.push(`${indent(ctx, 1)}${renderNode(node.name, ctx)}`);
 
   // Raw action (ADD COLUMN, DROP COLUMN, etc.)
   if (node.raw && node.raw.trim()) {
@@ -346,9 +491,11 @@ function renderAlterTable(node, ctx) {
 }
 
 function renderTruncateTable(node, ctx) {
-  let line = 'TRUNCATE TABLE ' + renderNode(node.name, ctx);
-  if (node.option) line += ` ${node.option}`;
-  return line;
+  const lines = [];
+  lines.push('TRUNCATE TABLE');
+  lines.push(`${indent(ctx, 1)}${renderNode(node.name, ctx)}`);
+  if (node.option) lines.push(`${indent(ctx, 1)}${node.option}`);
+  return lines.join('\n');
 }
 
 function renderCreateView(node, ctx) {
@@ -357,19 +504,22 @@ function renderCreateView(node, ctx) {
   if (node.orReplace) createLine += ' OR REPLACE';
   createLine += ' VIEW';
   if (node.ifNotExists) createLine += ' IF NOT EXISTS';
-  createLine += ` ${renderNode(node.name, ctx)}`;
   lines.push(createLine);
+  lines.push(`${indent(ctx, 1)}${renderNode(node.name, ctx)}`);
 
   // Column list (optional)
   if (node.columns && node.columns.length > 0) {
-    const cols = node.columns.map(c => c.value).join(', ');
+    const cols = node.columns.map(c => renderNode(c, ctx)).join(', ');
     lines.push(`${indent(ctx, 1)}(${cols})`);
   }
 
   // AS query
   lines.push(`AS`);
   if (node.raw && node.raw.trim()) {
-    lines.push(`${indent(ctx, 1)}${node.raw.trim()}`);
+    const formatted = tryFormatQuery(node.raw.trim());
+    const body = formatted || node.raw.trim();
+    const bodyLines = body.split('\n').map(line => `${indent(ctx, 1)}${line}`);
+    lines.push(...bodyLines);
   }
 
   return lines.join('\n');
@@ -377,6 +527,9 @@ function renderCreateView(node, ctx) {
 
 function renderSelect(node, ctx) {
   const lines = [];
+  if (node.hints || node.stream) {
+    markUnknown(ctx);
+  }
   let selectKeyword = 'SELECT';
   if (node.setQuantifier && node.setQuantifier === 'DISTINCT') {
     selectKeyword = 'SELECT DISTINCT';
@@ -434,7 +587,12 @@ function extractTopLevelSuffix(sql, tokens) {
 }
 function renderSelectItem(node, ctx) {
   const expr = renderNode(node.expr, ctx);
-  if (node.alias) return `${expr} AS ${node.alias.name || node.alias}`;
+  if (node.measure) markUnknown(ctx);
+  if (node.alias) {
+    if (typeof node.alias === 'string') return `${expr} AS ${node.alias}`;
+    if (node.alias.name || node.alias.value) return `${expr} AS ${node.alias.name || node.alias.value}`;
+    return `${expr} AS ${renderNode(node.alias, ctx)}`;
+  }
   return expr;
 }
 
@@ -453,6 +611,7 @@ function renderTableRef(node, ctx) {
     const alias = node.alias ? (node.alias.value || node.alias.name || node.alias) : null;
     return alias ? `${base} ${alias}` : base;
   }
+  markUnknown(ctx);
   return '[TableRef]';
 }
 
@@ -488,10 +647,10 @@ function renderParenList(items, ctx, renderItem) {
   if (!items || items.length === 0) return '()';
   const lines = [`${indent(ctx)}(`];
   const first = renderItem(items[0]);
-  lines.push(`${indent(ctx, 1)}${first}`);
+  lines.push(indentMultiline(first, indent(ctx, 1)));
   for (let i = 1; i < items.length; i++) {
     const item = renderItem(items[i]);
-    lines.push(`${indent(ctx, 1)}, ${item}`);
+    lines.push(indentMultiline(item, indent(ctx, 1), true));
   }
   lines.push(`${indent(ctx)})`);
   return lines.join('\n');
@@ -525,8 +684,15 @@ function renderInsert(node, ctx) {
         : node.source;
     if (sourceNode.type === 'TableConstructor' && sourceNode.kind === 'VALUES') {
       lines.push(`${indent(ctx)}VALUES`);
-      sourceNode.rows.forEach((row) => {
-        lines.push(renderValuesRow(row, ctx));
+      sourceNode.rows.forEach((row, idx) => {
+        const rowText = renderValuesRow(row, ctx);
+        if (idx === 0) {
+          lines.push(rowText);
+          return;
+        }
+        const rowLines = rowText.split('\n');
+        rowLines[0] = rowLines[0].replace(/^(\s*)/, '$1, ');
+        lines.push(rowLines.join('\n'));
       });
     } else {
       const sourceText = renderNode(node.source, withIndent(ctx, 0)).trim();
@@ -587,6 +753,51 @@ function renderUpdate(node, ctx) {
   return lines.join('\n');
 }
 
+function renderMerge(node, ctx) {
+  const lines = [];
+  if (node.hints || node.extend) {
+    markUnknown(ctx);
+  }
+  const tableText = renderNode(node.table, ctx);
+  const alias = node.alias ? (node.alias.value || node.alias.name || node.alias) : null;
+  const tableWithAlias = alias ? `${tableText} ${alias}` : tableText;
+  lines.push('MERGE INTO');
+  lines.push(`${indent(ctx, 1)}${tableWithAlias}`);
+  lines.push('USING');
+  lines.push(`${indent(ctx, 1)}${renderNode(node.using, ctx)}`);
+  lines.push('ON');
+  lines.push(`${indent(ctx, 1)}${renderNode(node.on, withIndent(ctx, ctx.indent + 1))}`);
+
+  if (node.matched) {
+    lines.push('WHEN MATCHED THEN');
+    lines.push(`${indent(ctx, 1)}UPDATE`);
+    lines.push(`${indent(ctx, 1)}SET`);
+    const assignments = node.matched.assignments || [];
+    assignments.forEach((assign, idx) => {
+      const target = renderNode(assign.target, ctx);
+      const expr = renderNode(assign.expr, ctx);
+      const prefix = idx === 0 ? indent(ctx, 2) : `${indent(ctx, 2)}, `;
+      lines.push(`${prefix}${target} = ${expr}`);
+    });
+  }
+
+  if (node.notMatched) {
+    lines.push('WHEN NOT MATCHED THEN');
+    lines.push(`${indent(ctx, 1)}INSERT`);
+    if (node.notMatched.columns) {
+      const cols = renderNode(node.notMatched.columns, withIndent(ctx, ctx.indent + 2));
+      lines.push(cols);
+    }
+    lines.push(`${indent(ctx, 1)}VALUES`);
+    if (node.notMatched.values) {
+      const values = renderNode(node.notMatched.values, withIndent(ctx, ctx.indent + 2));
+      lines.push(values);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 function renderValuesRow(row, ctx) {
   if (!row) return '';
   if (row.kind === 'EXPR') {
@@ -621,9 +832,10 @@ function renderJoin(node, ctx) {
     return `${base}\n${indent(ctx, 1)}ON ${expr}`;
   }
   if (node.condition.type === 'Using') {
-    const cols = node.condition.columns.items.map(c => c.value || c.name).join(', ');
+    const cols = node.condition.columns.items.map(c => renderNode(c, ctx)).join(', ');
     return `${base}\n${indent(ctx, 1)}USING (${cols})`;
   }
+  markUnknown(ctx);
   return base;
 }
 
@@ -639,7 +851,16 @@ function renderOrderByLimitOpt(opt, ctx) {
 
 function renderExpression2b(node, ctx) {
   const base = renderNode(node.base, ctx);
-  return base;
+  if (node.extensions && node.extensions.length) {
+    markUnknown(ctx);
+  }
+  const prefixes = node.prefixes || [];
+  if (!prefixes.length) return base;
+  const rendered = prefixes.map(p => {
+    if (typeof p === 'string' && /[A-Za-z]/.test(p)) return `${p.toUpperCase()} `;
+    return String(p);
+  }).join('');
+  return `${rendered}${base}`;
 }
 
 function renderBinaryOp(op) {
@@ -653,14 +874,27 @@ function renderInPredicate(node, ctx) {
   const notKeyword = node.not ? 'NOT ' : '';
   // source can be a subquery (OrderedQueryOrExpr) or a value list
   if (node.source.type === 'OrderedQueryOrExpr' || node.source.type === 'QueryOrExpr') {
-    const baseIndent = indent(ctx, 1);
     const inner = renderNode(node.source, withIndent(ctx, 0));
     if (!inner) {
       markUnknown(ctx);
       return `${left} ${notKeyword}IN (/* unknown */)`;
     }
-    const lines = inner.split('\n').map(line => baseIndent + line);
-    return `${left} ${notKeyword}IN (\n${lines.join('\n')}\n${indent(ctx)})`;
+    const lines = [`${left} ${notKeyword}IN`, `${indent(ctx, 1)}(`];
+    inner.split('\n').forEach(line => lines.push(`${indent(ctx, 2)}${line}`));
+    lines.push(`${indent(ctx, 1)})`);
+    return lines.join('\n');
+  }
+  if (node.source.type === 'ExpressionCommaList') {
+    const items = node.source.expressions.map(it => renderNode(it, ctx));
+    const lines = [`${left} ${notKeyword}IN`, `${indent(ctx, 1)}(`];
+    if (items.length > 0) {
+      lines.push(`${indent(ctx, 2)}${items[0]}`);
+      for (let i = 1; i < items.length; i++) {
+        lines.push(`${indent(ctx, 2)}, ${items[i]}`);
+      }
+    }
+    lines.push(`${indent(ctx, 1)})`);
+    return lines.join('\n');
   }
   const source = renderNode(node.source, ctx);
   return `${left} ${notKeyword}IN ${source}`;

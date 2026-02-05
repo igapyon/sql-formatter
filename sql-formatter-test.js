@@ -138,7 +138,10 @@ WHERE
     category: 'basic-select',
     description: 'SELECT with line comment',
     sql: "SELECT -- keep comment\n  a\nFROM t",
-    expectIncludes: ['SELECT -- keep comment'],
+    expect: `SELECT -- keep comment
+    a
+FROM
+    t`,
   },
   {
     name: 'select-group-by',
@@ -436,14 +439,40 @@ FROM
     description: 'Subquery in WHERE with IN',
     sql: 'SELECT name FROM users WHERE id IN (SELECT user_id FROM active_sessions)',
     expectedBehavior: 'passthrough',
-    expectIncludes: ['SELECT', 'FROM', 'WHERE', 'IN'],
+    expect: `SELECT
+    name
+FROM
+    users
+WHERE
+    id IN
+        (
+            SELECT
+                user_id
+            FROM
+                active_sessions
+        )`,
   },
   {
     name: 'subquery-multiple-from',
     category: 'subqueries',
     description: 'Multiple subqueries in FROM',
     sql: 'SELECT a.id, b.name FROM (SELECT id FROM users) a, (SELECT name FROM roles) b',
-    expectIncludes: ['SELECT', 'FROM'],
+    expect: `SELECT
+    a.id
+    , b.name
+FROM
+    (
+        SELECT
+            id
+        FROM
+            users
+    ) a
+    , (
+        SELECT
+            name
+        FROM
+            roles
+    ) b`,
   },
   {
     name: 'nested-subquery-3-levels',
@@ -475,19 +504,21 @@ FROM
 FROM
     t1
 WHERE
-    id IN (
-        SELECT
-            id
-        FROM
-            t2
-        WHERE
-            id IN (
-                SELECT
-                    id
-                FROM
-                    t3
-            )
-    )`,
+    id IN
+        (
+            SELECT
+                id
+            FROM
+                t2
+            WHERE
+                id IN
+                    (
+                        SELECT
+                            id
+                        FROM
+                            t3
+                    )
+        )`,
   },
   {
     name: 'where-with-and-or-in-subquery',
@@ -501,12 +532,13 @@ FROM
 WHERE
     status = 1
     AND
-        id IN (
-        SELECT
-            order_id
-        FROM
-            shipped
-    )
+        id IN
+        (
+            SELECT
+                order_id
+            FROM
+                shipped
+        )
     AND
         total > 100`,
   },
@@ -523,7 +555,14 @@ const aggregationTests = [
     description: 'GROUP BY with HAVING (partial support)',
     sql: 'SELECT dept, COUNT(*) FROM employee GROUP BY dept HAVING COUNT(*) > 5',
     expectedBehavior: 'partial',
-    expectIncludes: ['SELECT', 'FROM', 'GROUP BY', 'HAVING'],
+    expect: `SELECT
+    dept
+    , COUNT(*)
+FROM
+    employee
+GROUP BY
+    dept
+HAVING COUNT(*) > 5`,
   },
   {
     name: 'select-multiple-aggregates',
@@ -539,7 +578,10 @@ const aggregationTests = [
     description: 'COUNT with DISTINCT (partial support)',
     sql: 'SELECT COUNT(DISTINCT user_id) FROM orders',
     expectedBehavior: 'partial',
-    expectIncludes: ['SELECT', 'COUNT', 'DISTINCT', 'FROM'],
+    expect: `SELECT
+    COUNT(DISTINCT user_id)
+FROM
+    orders`,
   },
   {
     name: 'multiple-aggregates-with-distinct',
@@ -616,6 +658,143 @@ ORDER BY
 ];
 
 // ============================================================================
+// TEST CASES - PLACEHOLDERS
+// ============================================================================
+
+const placeholderTests = [
+  {
+    name: 'placeholder-qmark',
+    category: 'placeholders',
+    description: 'Positional parameter (?)',
+    sql: 'SELECT a FROM t WHERE b = ?',
+    expect: `SELECT
+    a
+FROM
+    t
+WHERE
+    b = ?`,
+  },
+  {
+    name: 'placeholder-named-colon',
+    category: 'placeholders',
+    description: 'Named parameter (:name)',
+    sql: 'SELECT a FROM t WHERE b = :name',
+    expect: `SELECT
+    a
+FROM
+    t
+WHERE
+    b = :name`,
+  },
+  {
+    name: 'placeholder-named-at',
+    category: 'placeholders',
+    description: 'Named parameter (@name)',
+    sql: 'SELECT a FROM t WHERE b = @name',
+    expect: `SELECT
+    a
+FROM
+    t
+WHERE
+    b = @name`,
+  },
+  {
+    name: 'placeholder-limit-dollar',
+    category: 'placeholders',
+    description: 'Dollar indexed parameter in LIMIT ($1)',
+    sql: 'SELECT a FROM t LIMIT $1',
+    expect: `SELECT
+    a
+FROM
+    t
+LIMIT $1`,
+  },
+  {
+    name: 'placeholder-schema-colon',
+    category: 'placeholders',
+    description: 'schema:table should not be treated as placeholder',
+    sql: 'SELECT * FROM schema:table',
+    expectIncludes: ['SELECT', 'FROM', 'schema:table'],
+  },
+  {
+    name: 'placeholder-colon-hyphen',
+    category: 'placeholders',
+    description: ':foo-bar should not be treated as placeholder',
+    sql: 'SELECT a FROM t WHERE b = :foo-bar',
+    expectIncludes: ['SELECT', 'FROM', ':foo-bar'],
+  },
+  {
+    name: 'placeholder-in-comment-string',
+    category: 'placeholders',
+    description: 'Ignore placeholders inside comments/strings',
+    sql: "SELECT ':name' as v FROM t -- @name",
+    expect: `SELECT
+    ':name' AS v
+FROM
+    t -- @name`,
+  },
+  {
+    name: 'placeholder-join-on',
+    category: 'placeholders',
+    description: 'Named placeholder inside JOIN condition',
+    sql: 'SELECT a FROM t1 JOIN t2 ON t1.id = @id',
+    expect: `SELECT
+    a
+FROM
+    t1
+    JOIN t2
+        ON t1.id = @id`,
+  },
+  {
+    name: 'placeholder-in-list',
+    category: 'placeholders',
+    description: 'Multiple positional parameters in IN list',
+    sql: 'SELECT a FROM t WHERE b IN (?, ?, ?)',
+    expect: `SELECT
+    a
+FROM
+    t
+WHERE
+    b IN
+        (
+            ?
+            , ?
+            , ?
+        )`,
+  },
+  {
+    name: 'placeholder-limit-offset-dollar',
+    category: 'placeholders',
+    description: 'Dollar indexed parameters in LIMIT/OFFSET',
+    sql: 'SELECT a FROM t ORDER BY id LIMIT $1 OFFSET $2',
+    expect: `SELECT
+    a
+FROM
+    t
+ORDER BY
+    id
+LIMIT $1
+OFFSET $2`,
+  },
+  {
+    name: 'placeholder-mixed',
+    category: 'placeholders',
+    description: 'Mixed placeholders in one WHERE clause',
+    sql: 'SELECT a FROM t WHERE b = ? AND c = :name AND d = @name',
+    expect: `SELECT
+    a
+FROM
+    t
+WHERE
+    b = ?
+    AND
+        c = :name
+    AND
+        d = @name`,
+  },
+];
+
+// ============================================================================
 // TEST CASES - EDGE CASES
 // ============================================================================
 
@@ -625,7 +804,10 @@ const edgeCaseTests = [
     category: 'edge-cases',
     description: 'String literal with single quotes',
     sql: "SELECT 'O''Brien' FROM t",
-    expectIncludes: ['SELECT', 'FROM'],
+    expect: `SELECT
+    'O''Brien'
+FROM
+    t`,
   },
   {
     name: 'edge-case-unicode-identifiers',
@@ -664,7 +846,14 @@ FROM
     category: 'edge-cases',
     description: 'Negative numeric literals',
     sql: 'SELECT a FROM t WHERE b > -10 AND c < -5.5',
-    expectIncludes: ['SELECT', 'FROM', 'WHERE'],
+    expect: `SELECT
+    a
+FROM
+    t
+WHERE
+    b > -10
+    AND
+        c < -5.5`,
   },
   {
     name: 'edge-case-match-recognize',
@@ -682,14 +871,20 @@ MATCH_RECOGNIZE (PATTERN (A B) DEFINE A AS a > 0, B AS b > 0)`,
     category: 'edge-cases',
     description: 'Deeply nested parenthesized expressions',
     sql: 'SELECT (((a + b) * c) - d) FROM t',
-    expectIncludes: ['SELECT', 'FROM'],
+    expect: `SELECT
+    (((a + b) * c) - d)
+FROM
+    t`,
   },
   {
     name: 'edge-case-empty-string',
     category: 'edge-cases',
     description: 'Empty string literal',
     sql: "SELECT '' as empty_col FROM t",
-    expectIncludes: ['SELECT', 'FROM'],
+    expect: `SELECT
+    '' AS empty_col
+FROM
+    t`,
   },
   {
     name: 'edge-case-very-long-where',
@@ -703,7 +898,12 @@ MATCH_RECOGNIZE (PATTERN (A B) DEFINE A AS a > 0, B AS b > 0)`,
     category: 'edge-cases',
     description: 'Mixed case keywords (passthrough)',
     sql: 'SeLeCt id FrOm users WhErE active = 1',
-    expectIncludes: ['id', 'users', 'active'],
+    expect: `SELECT
+    id
+FROM
+    users
+WHERE
+    active = 1`,
   },
   {
     name: 'edge-case-reserved-word-identifier',
@@ -713,18 +913,41 @@ MATCH_RECOGNIZE (PATTERN (A B) DEFINE A AS a > 0, B AS b > 0)`,
     expectIncludes: ['SELECT', 'FROM'],
   },
   {
+    name: 'edge-case-quoted-identifiers',
+    category: 'edge-cases',
+    description: 'Quoted identifiers with spaces and reserved words',
+    sql: 'SELECT "Has Space", "SELECT" FROM "My Table"',
+    expect: `SELECT
+    "Has Space"
+    , "SELECT"
+FROM
+    "My Table"`,
+  },
+  {
     name: 'edge-case-numeric-literals-types',
     category: 'edge-cases',
     description: 'Various numeric literal types',
     sql: 'SELECT 123, -456, 78.90, 1.23e5, 0.5e-2 FROM t',
-    expectIncludes: ['SELECT', 'FROM'],
+    expect: `SELECT
+    123
+    , -456
+    , 78.90
+    , 1.23e5
+    , 0.5e-2
+FROM
+    t`,
   },
   {
     name: 'edge-case-timestamp-literals',
     category: 'edge-cases',
     description: 'TIMESTAMP and other datetime literals',
     sql: "SELECT TIMESTAMP '2024-01-15 10:30:45', DATE '2024-01-15', TIME '10:30:45' FROM events",
-    expectIncludes: ['SELECT', 'FROM', 'TIMESTAMP', 'DATE', 'TIME'],
+    expect: `SELECT
+    TIMESTAMP '2024-01-15 10:30:45'
+    , DATE '2024-01-15'
+    , TIME '10:30:45'
+FROM
+    events`,
   },
 ];
 
@@ -745,14 +968,48 @@ const complexTests = [
     category: 'complex',
     description: 'Three-way JOIN with WHERE and ORDER BY',
     sql: 'SELECT u.id, u.name, o.order_id, p.product_name FROM users u LEFT JOIN orders o ON u.id = o.user_id LEFT JOIN products p ON o.product_id = p.id WHERE u.active = 1 ORDER BY o.order_date DESC',
-    expectIncludes: ['SELECT', 'FROM', 'LEFT JOIN', 'WHERE', 'ORDER BY'],
+    expect: `SELECT
+    u.id
+    , u.name
+    , o.order_id
+    , p.product_name
+FROM
+    users u
+    LEFT JOIN orders o
+        ON u.id = o.user_id
+    LEFT JOIN products p
+        ON o.product_id = p.id
+WHERE
+    u.active = 1
+ORDER BY
+    o.order_date DESC`,
   },
   {
     name: 'complex-nested-subqueries-joins',
     category: 'complex',
     description: 'Nested subqueries with JOINs',
     sql: 'SELECT a.id, a.value FROM (SELECT id, value FROM table1 WHERE status = 1) a LEFT JOIN (SELECT id, ref_id FROM table2) b ON a.id = b.ref_id',
-    expectIncludes: ['SELECT', 'FROM', 'LEFT JOIN'],
+    expect: `SELECT
+    a.id
+    , a.value
+FROM
+    (
+        SELECT
+            id
+            , value
+        FROM
+            table1
+        WHERE
+            status = 1
+    ) a
+    LEFT JOIN (
+        SELECT
+            id
+            , ref_id
+        FROM
+            table2
+    ) b
+        ON a.id = b.ref_id`,
   },
   {
     name: 'complex-insert-select',
@@ -781,7 +1038,25 @@ const complexTests = [
     category: 'complex',
     description: 'Realistic analytics query with multiple JOINs and aggregation',
     sql: 'SELECT u.user_id, u.email, COUNT(DISTINCT o.order_id) as total_orders, SUM(oi.quantity) as total_items FROM users u LEFT JOIN orders o ON u.user_id = o.user_id LEFT JOIN order_items oi ON o.order_id = oi.order_id WHERE u.created_at >= DATE("2024-01-01") GROUP BY u.user_id, u.email HAVING COUNT(DISTINCT o.order_id) > 0 ORDER BY total_items DESC',
-    expectIncludes: ['SELECT', 'FROM', 'LEFT JOIN', 'WHERE', 'GROUP BY', 'ORDER BY'],
+    expect: `SELECT
+    u.user_id
+    , u.email
+    , COUNT(DISTINCT o.order_id) AS total_orders
+    , SUM(oi.quantity) AS total_items
+FROM
+    users u
+    LEFT JOIN orders o
+        ON u.user_id = o.user_id
+    LEFT JOIN order_items oi
+        ON o.order_id = oi.order_id
+WHERE
+    u.created_at >= DATE("2024-01-01")
+GROUP BY
+    u.user_id
+    , u.email
+HAVING COUNT(DISTINCT o.order_id) > 0
+ORDER BY
+    total_items DESC`,
   },
 ];
 
@@ -791,40 +1066,140 @@ const complexTests = [
 
 const dmlExtensionTests = [
   {
-    name: 'insert-multiple-rows',
-    category: 'dml-extension',
-    description: 'INSERT with multiple VALUES rows',
-    sql: 'INSERT INTO users(id, name) VALUES (1, "Alice"), (2, "Bob"), (3, "Charlie")',
-    expectIncludes: ['INSERT', 'INTO', 'VALUES'],
-  },
-  {
     name: 'insert-with-select-simple',
     category: 'dml-extension',
     description: 'INSERT with SELECT source (simple)',
     sql: 'INSERT INTO archive SELECT id, name FROM users WHERE archived = 1',
-    expectIncludes: ['INSERT', 'SELECT', 'FROM', 'WHERE'],
+    expect: `INSERT
+INTO
+    archive
+SELECT
+    id
+    , name
+FROM
+    users
+WHERE
+    archived = 1`,
+  },
+  {
+    name: 'insert-multiple-rows',
+    category: 'dml-extension',
+    description: 'INSERT with multiple VALUES rows',
+    sql: 'INSERT INTO users(id, name) VALUES (1, "Alice"), (2, "Bob"), (3, "Charlie")',
+    expect: `INSERT
+INTO
+    users
+    (
+        id
+        , name
+    )
+VALUES
+    (
+        1
+        , "Alice"
+    )
+    , (
+        2
+        , "Bob"
+    )
+    , (
+        3
+        , "Charlie"
+    )`,
   },
   {
     name: 'update-multiple-columns',
     category: 'dml-extension',
     description: 'UPDATE with many column assignments',
     sql: 'UPDATE employees SET salary = 5000, bonus = 500, status = "active", department = "eng" WHERE emp_id = 100',
-    expectIncludes: ['UPDATE', 'SET', 'WHERE'],
+    expect: `UPDATE
+    employees
+SET
+    salary = 5000
+    , bonus = 500
+    , status = "active"
+    , department = "eng"
+WHERE
+    emp_id = 100`,
+  },
+  {
+    name: 'update-with-function',
+    category: 'dml-extension',
+    description: 'UPDATE with function in SET',
+    sql: 'UPDATE employees SET updated_at = NOW() WHERE emp_id = 100',
+    expect: `UPDATE
+    employees
+SET
+    updated_at = NOW()
+WHERE
+    emp_id = 100`,
   },
   {
     name: 'delete-complex-where',
     category: 'dml-extension',
     description: 'DELETE with complex WHERE conditions',
     sql: 'DELETE FROM logs WHERE created_at < DATE_SUB(NOW(), INTERVAL 90 DAY) AND level = "DEBUG" AND processed = 0',
-    expectIncludes: ['DELETE', 'FROM', 'WHERE'],
+    expect: `DELETE
+FROM
+    logs
+WHERE
+    created_at < DATE_SUB(NOW(), INTERVAL 90 DAY)
+    AND
+        level = "DEBUG"
+    AND
+        processed = 0`,
+  },
+  {
+    name: 'delete-in-mixed',
+    category: 'dml-extension',
+    description: 'DELETE with IN subquery and IN list',
+    sql: 'DELETE FROM orders WHERE user_id IN (SELECT id FROM users WHERE active = 1) AND status IN ("pending", "hold")',
+    expect: `DELETE
+FROM
+    orders
+WHERE
+    user_id IN
+        (
+            SELECT
+                id
+            FROM
+                users
+            WHERE
+                active = 1
+        )
+    AND
+        status IN
+        (
+            "pending"
+            , "hold"
+        )`,
   },
   {
     name: 'merge-statement',
     category: 'dml-extension',
     description: 'MERGE statement (if supported)',
     sql: 'MERGE INTO target t USING source s ON t.id = s.id WHEN MATCHED THEN UPDATE SET t.value = s.value WHEN NOT MATCHED THEN INSERT (id, value) VALUES (s.id, s.value)',
-    expectedBehavior: 'passthrough',
-    expectIncludes: ['MERGE', 'INTO', 'USING', 'ON', 'MATCHED'],
+    expect: `MERGE INTO
+    target t
+USING
+    source s
+ON
+    t.id = s.id
+WHEN MATCHED THEN
+    UPDATE
+    SET
+        t.value = s.value
+WHEN NOT MATCHED THEN
+    INSERT
+        (
+            id
+            , value
+        )
+    VALUES
+        (
+            s.id
+            , s.value
+        )`,
   },
 ];
 
@@ -839,14 +1214,17 @@ const ddlTests = [
     category: 'ddl',
     description: 'DROP TABLE simple',
     sql: 'DROP TABLE users',
-    expect: 'DROP TABLE users',
+    expect: `DROP TABLE
+    users`,
   },
   {
     name: 'ddl-drop-table-if-exists-cascade',
     category: 'ddl',
     description: 'DROP TABLE with IF EXISTS and CASCADE',
     sql: 'DROP TABLE IF EXISTS orders CASCADE',
-    expect: 'DROP TABLE IF EXISTS orders CASCADE',
+    expect: `DROP TABLE IF EXISTS
+    orders
+    CASCADE`,
   },
 
   // CREATE TABLE
@@ -855,7 +1233,8 @@ const ddlTests = [
     category: 'ddl',
     description: 'CREATE TABLE with basic columns',
     sql: 'CREATE TABLE users (id INT, name VARCHAR(100))',
-    expect: `CREATE TABLE users
+    expect: `CREATE TABLE
+    users
     (
         id INT
         , name VARCHAR (100)
@@ -866,17 +1245,35 @@ const ddlTests = [
     category: 'ddl',
     description: 'CREATE TABLE IF NOT EXISTS',
     sql: 'CREATE TABLE IF NOT EXISTS users (id INT PRIMARY KEY)',
-    expect: `CREATE TABLE IF NOT EXISTS users
+    expect: `CREATE TABLE IF NOT EXISTS
+    users
     (
         id INT PRIMARY KEY
     )`,
+  },
+  {
+    name: 'ddl-create-table-as-select',
+    category: 'ddl',
+    description: 'CREATE TABLE AS SELECT',
+    sql: 'CREATE TABLE archive AS SELECT id, name FROM users WHERE active = 0',
+    expect: `CREATE TABLE
+    archive
+    AS
+        SELECT
+            id
+            , name
+        FROM
+            users
+        WHERE
+            active = 0`,
   },
   {
     name: 'ddl-create-temp-table',
     category: 'ddl',
     description: 'CREATE TEMPORARY TABLE',
     sql: 'CREATE TEMPORARY TABLE session_data (session_id VARCHAR(255))',
-    expect: `CREATE TEMPORARY TABLE session_data
+    expect: `CREATE TEMPORARY TABLE
+    session_data
     (
         session_id VARCHAR (255)
     )`,
@@ -888,7 +1285,8 @@ const ddlTests = [
     category: 'ddl',
     description: 'CREATE INDEX',
     sql: 'CREATE INDEX idx_name ON users (name)',
-    expect: `CREATE INDEX idx_name
+    expect: `CREATE INDEX
+    idx_name
 ON users
     (
         name
@@ -899,7 +1297,8 @@ ON users
     category: 'ddl',
     description: 'CREATE UNIQUE INDEX',
     sql: 'CREATE UNIQUE INDEX idx_email ON users (email)',
-    expect: `CREATE UNIQUE INDEX idx_email
+    expect: `CREATE UNIQUE INDEX
+    idx_email
 ON users
     (
         email
@@ -910,7 +1309,8 @@ ON users
     category: 'ddl',
     description: 'CREATE INDEX with multiple columns',
     sql: 'CREATE INDEX idx_name_email ON users (last_name, email)',
-    expect: `CREATE INDEX idx_name_email
+    expect: `CREATE INDEX
+    idx_name_email
 ON users
     (
         last_name
@@ -924,7 +1324,8 @@ ON users
     category: 'ddl',
     description: 'ALTER TABLE ADD COLUMN',
     sql: 'ALTER TABLE users ADD COLUMN age INT',
-    expect: `ALTER TABLE users
+    expect: `ALTER TABLE
+    users
     ADD COLUMN age INT`,
   },
 
@@ -934,7 +1335,8 @@ ON users
     category: 'ddl',
     description: 'TRUNCATE TABLE',
     sql: 'TRUNCATE TABLE logs',
-    expect: 'TRUNCATE TABLE logs',
+    expect: `TRUNCATE TABLE
+    logs`,
   },
 
   // CREATE VIEW
@@ -943,9 +1345,30 @@ ON users
     category: 'ddl',
     description: 'CREATE VIEW',
     sql: 'CREATE VIEW active_users AS SELECT * FROM users WHERE active = 1',
-    expect: `CREATE VIEW active_users
+    expect: `CREATE VIEW
+    active_users
 AS
-    SELECT * FROM users WHERE active = 1`,
+    SELECT
+        *
+    FROM
+        users
+    WHERE
+        active = 1`,
+  },
+  {
+    name: 'ddl-create-view-or-replace',
+    category: 'ddl',
+    description: 'CREATE OR REPLACE VIEW',
+    sql: 'CREATE OR REPLACE VIEW active_users AS SELECT id FROM users WHERE active = 1',
+    expect: `CREATE OR REPLACE VIEW
+    active_users
+AS
+    SELECT
+        id
+    FROM
+        users
+    WHERE
+        active = 1`,
   },
 
   // Edge case
@@ -1069,28 +1492,61 @@ const whereClauseTests = [
     category: 'where-clause',
     description: 'WHERE with AND/OR mixed conditions',
     sql: 'SELECT id FROM users WHERE (age > 18 AND status = "active") OR country = "JP"',
-    expectIncludes: ['SELECT', 'FROM', 'WHERE'],
+    expect: `SELECT
+    id
+FROM
+    users
+WHERE
+    (
+            age > 18
+            AND
+                status = "active"
+        )
+    OR
+        country = "JP"`,
   },
   {
     name: 'where-in-list',
     category: 'where-clause',
     description: 'WHERE with IN clause (list)',
     sql: 'SELECT id, name FROM users WHERE status IN ("active", "pending", "approved")',
-    expectIncludes: ['SELECT', 'FROM', 'WHERE', 'IN'],
+    expect: `SELECT
+    id
+    , name
+FROM
+    users
+WHERE
+    status IN
+        (
+            "active"
+            , "pending"
+            , "approved"
+        )`,
   },
   {
     name: 'where-not-in',
     category: 'where-clause',
     description: 'WHERE with NOT IN clause',
     sql: 'SELECT id FROM orders WHERE user_id NOT IN (10, 20, 30, 40)',
-    expectIncludes: ['SELECT', 'FROM', 'WHERE', 'NOT'],
+    expect: `SELECT
+    id
+FROM
+    orders
+WHERE
+    user_id NOT IN
+        (
+            10
+            , 20
+            , 30
+            , 40
+        )`,
   },
   {
     name: 'where-between',
     category: 'where-clause',
     description: 'WHERE with BETWEEN operator',
     sql: 'SELECT id, amount FROM transactions WHERE amount BETWEEN 100 AND 1000',
-    expectIncludes: ['SELECT', 'FROM', 'WHERE', 'BETWEEN'],
+    expect: 'SELECT id, amount FROM transactions WHERE amount BETWEEN 100 AND 1000',
   },
   {
     name: 'where-like',
@@ -1139,7 +1595,10 @@ const functionTests = [
     category: 'functions',
     description: 'MIN aggregate function',
     sql: 'SELECT MIN(price) FROM products',
-    expectIncludes: ['SELECT', 'MIN', 'FROM'],
+    expect: `SELECT
+    MIN(price)
+FROM
+    products`,
   },
   {
     name: 'func-avg-aggregate',
@@ -1314,7 +1773,17 @@ const scalarSubqueryTests = [
     category: 'scalar-subqueries',
     description: 'Scalar subquery in SET clause (UPDATE)',
     sql: 'UPDATE users SET last_order_date = (SELECT MAX(created_at) FROM orders WHERE user_id = users.id)',
-    expectIncludes: ['UPDATE', 'SET', 'SELECT'],
+    expect: `UPDATE
+    users
+SET
+    last_order_date = (
+        SELECT
+            MAX(created_at)
+        FROM
+            orders
+        WHERE
+            user_id = users.id
+    )`,
   },
 ];
 
@@ -1380,7 +1849,7 @@ const passthroughTests = [
     description: 'UNION - partial support (returns original SQL)',
     sql: 'SELECT id, name FROM users UNION SELECT emp_id, emp_name FROM employees',
     expectedBehavior: 'passthrough',
-    expectIncludes: ['SELECT', 'FROM'],
+    expect: 'SELECT id, name FROM users UNION SELECT emp_id, emp_name FROM employees',
   },
   {
     name: 'passthrough-union-all',
@@ -1388,7 +1857,7 @@ const passthroughTests = [
     description: 'UNION ALL - partial support (returns original SQL)',
     sql: 'SELECT id FROM table1 UNION ALL SELECT id FROM table2',
     expectedBehavior: 'passthrough',
-    expectIncludes: ['SELECT', 'FROM'],
+    expect: 'SELECT id FROM table1 UNION ALL SELECT id FROM table2',
   },
   {
     name: 'passthrough-case-expression',
@@ -1420,7 +1889,7 @@ const passthroughTests = [
     description: 'INTERSECT - not yet formatted',
     sql: 'SELECT id FROM table1 INTERSECT SELECT id FROM table2',
     expectedBehavior: 'passthrough',
-    expectIncludes: ['SELECT', 'FROM'],
+    expect: 'SELECT id FROM table1 INTERSECT SELECT id FROM table2',
   },
   {
     name: 'passthrough-except',
@@ -1428,7 +1897,7 @@ const passthroughTests = [
     description: 'EXCEPT - not yet formatted',
     sql: 'SELECT id FROM table1 EXCEPT SELECT id FROM table2',
     expectedBehavior: 'passthrough',
-    expectIncludes: ['SELECT', 'FROM'],
+    expect: 'SELECT id FROM table1 EXCEPT SELECT id FROM table2',
   },
 ];
 
@@ -1443,6 +1912,7 @@ const allTestGroups = [
   { name: 'Subqueries', tests: subqueryTests },
   { name: 'Aggregation & GROUP BY', tests: aggregationTests },
   { name: 'ORDER BY & LIMIT', tests: orderByLimitTests },
+  { name: 'Placeholders', tests: placeholderTests },
   { name: 'Edge Cases', tests: edgeCaseTests },
   { name: 'Complex Queries', tests: complexTests },
   { name: 'DML Extensions', tests: dmlExtensionTests },

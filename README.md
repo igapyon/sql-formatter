@@ -31,6 +31,14 @@ node spec/apache-calcite-Parser-test.js
 node sql-formatter-test.js
 ```
 
+### テスト実行ポリシー
+- 生成AIが変更を加えた場合、まず生成AI側でテスト実行する
+- 例外がある場合は、その理由を明記する
+
+### テスト記述の指針
+- 仕様が確定しているケースは `expect` 固定が有利（消失や回帰を確実に検知できる）
+- `expectIncludes` は変動余地のあるケースや部分的な確認に限定する
+
 ### 開発時の基本方針
 - `.md` と `.js` の production 名は一致させる
 - パーサー変更時は `node spec/apache-calcite-Parser-test.js` を実行
@@ -80,6 +88,13 @@ node sql-formatter-test.js
 - カンマ位置: リスト先頭（comma-first style）
 - 主要句改行: FROM, JOIN, WHERE, GROUP BY, HAVING, ORDER BY は必ず改行
 ```
+
+### プレースホルダー対応
+- 対応: `?`, `:name`, `@name`
+- `:name` / `@name` の名前は `^[A-Za-z_][A-Za-z0-9_]*$` のみ許可
+- `schema:table` など、識別子直後の `:name` はプレースホルダー扱いしない
+- `$1` は識別子優先。LIMIT/OFFSET/FETCH ではプレースホルダーとして扱う
+- PostgreSQL の `?` 系演算子（jsonb など）は非対応（`?` は常にプレースホルダー）
 
 ### DDL 統合（2026年1月実装）
 **コミット**: `f91ec95` "Integrate DDL parser for table and index formatting"
