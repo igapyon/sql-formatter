@@ -280,13 +280,17 @@ class CalciteLexer {
         }
         this.pos = p;
         value = decodeUnicodeEscapes(value, escapeChar);
-        this.tokens.push({ type: "IDENT", value, start, end: this.pos });
+        this.tokens.push({ type: "IDENT", value, start, end: this.pos, quoted: "\"" });
         continue;
       }
       if (ch === '"' || ch === "`") {
         if (ch === "\"") {
           const { value, start, end, isString } = readDoubleQuotedMaybeString();
-          this.tokens.push({ type: isString ? "STRING" : "IDENT", value, start, end });
+          if (isString) {
+            this.tokens.push({ type: "STRING", value, start, end });
+          } else {
+            this.tokens.push({ type: "IDENT", value, start, end, quoted: "\"" });
+          }
         } else {
           const { value, start, end } = readQuotedIdentifier(ch);
           this.tokens.push({ type: "IDENT", value, start, end });
@@ -317,14 +321,18 @@ class CalciteLexer {
         }
         if (/[eE]/.test(s[this.pos])) {
           const e = s[this.pos];
-          const sign = s[this.pos + 1];
-          if (/[0-9\+\-]/.test(sign) && /[0-9]/.test(s[this.pos + 2] || "")) {
+          const next = s[this.pos + 1];
+          if (/[0-9]/.test(next)) {
             value += e;
             this.pos++;
-            if (sign === "+" || sign === "-") {
-              value += sign;
-              this.pos++;
+            while (this.pos < s.length && /[0-9]/.test(s[this.pos])) {
+              value += s[this.pos++];
             }
+          } else if ((next === "+" || next === "-") && /[0-9]/.test(s[this.pos + 2] || "")) {
+            value += e;
+            this.pos++;
+            value += next;
+            this.pos++;
             while (this.pos < s.length && /[0-9]/.test(s[this.pos])) {
               value += s[this.pos++];
             }
@@ -394,6 +402,11 @@ class CalciteParser {
       i++;
     }
     return { type: "EOF", value: null };
+  }
+  prevNonComment() {
+    let i = this.pos - 1;
+    while (i >= 0 && this.isCommentToken(this.tokens[i])) i--;
+    return this.tokens[i] || null;
   }
   nextRaw() { return this.tokens[this.pos++] || { type: "EOF", value: null }; }
   next() {
@@ -516,6 +529,15 @@ class CalciteParser {
   }
   isTableHintsStart() {
     return this.peek().type === "HINT";
+  }
+  isValidParamIdentToken(t) {
+    return t && t.type === "IDENT" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(String(t.value));
+  }
+  isAdjacentToPrevIdent(cur) {
+    const prev = this.prevNonComment();
+    return prev && prev.type === "IDENT" &&
+      typeof prev.end === "number" && typeof cur.start === "number" &&
+      prev.end === cur.start;
   }
   expect(type) {
     const t = this.peek();
@@ -1996,6 +2018,18 @@ class CalciteParser {
     if (this.isSymbol("?") || (this.isSymbol(":") && this.peekN(1).type === "NUMBER")) {
       return this.DynamicParam();
     }
+    if ((this.isSymbol(":") || this.isSymbol("@")) && this.isValidParamIdentToken(this.peekN(1))) {
+      const cur = this.peek();
+      const next = this.peekN(1);
+      const afterName = this.peekN(2);
+      const adjacentIdent = cur.value === ":" && this.isAdjacentToPrevIdent(cur);
+      const adjacentHyphen = afterName && afterName.type === "SYMBOL" && afterName.value === "-" &&
+        typeof next.end === "number" && typeof afterName.start === "number" &&
+        next.end === afterName.start;
+      if (!adjacentIdent && !adjacentHyphen) {
+        return this.DynamicParam();
+      }
+    }
     if (this.isKeyword("CURRENT_USER") || this.isKeyword("CURRENT_DATE") || this.isKeyword("CURRENT_TIME")) {
       return this.ContextVariable();
     }
@@ -2967,7 +3001,19 @@ class CalciteParser {
       throw new Error(`Expected identifier but got ${t.type}:${t.value}`);
     }
     this.next();
-    return { type: "Identifier", value: t.value };
+    let value = String(t.value);
+    const quoted = t.quoted || null;
+    while (this.isSymbol(":")) {
+      const colon = this.peek();
+      const next = this.peekN(1);
+      if (!next || next.type !== "IDENT") break;
+      if (typeof t.end === "number" && typeof colon.start === "number" && t.end !== colon.start) break;
+      if (typeof colon.end === "number" && typeof next.start === "number" && colon.end !== next.start) break;
+      this.next();
+      this.next();
+      value += `:${next.value}`;
+    }
+    return { type: "Identifier", value, quoted };
   }
 
   SimpleIdentifierFromStringLiteral() {
@@ -3744,11 +3790,27 @@ class CalciteParser {
 
   DynamicParam() {
     if (this.acceptSymbol("?")) {
-      return { type: "DynamicParam", kind: "QMARK", index: null };
+      return { type: "DynamicParam", kind: "QMARK", index: null, raw: "?" };
     }
-    if (this.acceptSymbol(":")) {
+    const cur = this.peek();
+    const next = this.peekN(1);
+    if (cur.type === "SYMBOL" && cur.value === ":" && next.type === "NUMBER") {
+      this.next();
       const index = this.UnsignedIntLiteral();
-      return { type: "DynamicParam", kind: "INDEXED", index };
+      return { type: "DynamicParam", kind: "INDEXED", index, raw: `:${index.value}` };
+    }
+    if (cur.type === "SYMBOL" && (cur.value === ":" || cur.value === "@") && this.isValidParamIdentToken(next)) {
+      const afterName = this.peekN(2);
+      if (cur.value === ":" && this.isAdjacentToPrevIdent(cur)) return null;
+      if (afterName && afterName.type === "SYMBOL" && afterName.value === "-" &&
+          typeof next.end === "number" && typeof afterName.start === "number" &&
+          next.end === afterName.start) {
+        return null;
+      }
+      this.next();
+      const nameTok = this.next();
+      const prefix = cur.value;
+      return { type: "DynamicParam", kind: "NAMED", name: nameTok.value, raw: `${prefix}${nameTok.value}` };
     }
     return null;
   }
@@ -3924,8 +3986,19 @@ class CalciteParser {
   }
 
   UnsignedNumericLiteralOrParam() {
-    if (this.isSymbol("?") || (this.isSymbol(":") && this.peekN(1).type === "NUMBER")) {
-      return this.DynamicParam();
+    const next = this.peekN(1);
+    if (this.isSymbol("?")) return this.DynamicParam();
+    if (this.isSymbol(":") && (next.type === "NUMBER" || this.isValidParamIdentToken(next))) return this.DynamicParam();
+    if (this.isSymbol("@") && this.isValidParamIdentToken(next)) return this.DynamicParam();
+    const cur = this.peek();
+    if (cur.type === "IDENT" && /^\$[0-9]+$/.test(String(cur.value))) {
+      this.next();
+      return {
+        type: "DynamicParam",
+        kind: "DOLLAR_INDEX",
+        index: { type: "UnsignedIntLiteral", value: String(cur.value).slice(1) },
+        raw: String(cur.value),
+      };
     }
     return this.UnsignedNumericLiteral();
   }
