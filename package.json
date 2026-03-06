@@ -1,0 +1,11 @@
+{
+  "name": "sql-formatter-single-file-build",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "npm run test:unit && npm run build:html",
+    "build:html": "node ./scripts/build.mjs",
+    "check:all": "npm run test:unit && npm run build:html",
+    "test:unit": "node ./test/sql-formatter.test.ts"
+  }
+}

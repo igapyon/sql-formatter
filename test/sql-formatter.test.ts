@@ -1,6 +1,6 @@
 'use strict';
 
-const { formatSql } = require('./sql-formatter');
+const { formatSql } = require('../src/sql-formatter.ts');
 
 // ============================================================================
 // TEST UTILITIES

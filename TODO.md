@@ -54,3 +54,15 @@
 - 未対応箇所のみ原文保持できるよう、ASTに位置情報(start/end)を付与して部分フォーマットを可能にする
 - index.html に GitHub リポジトリへのリンクアイコン追加
 - index.html の Web デザイン更新
+- `tailwindcss` 依存を廃止し、Material Design 3 + カスタム Web Components ベースのUIへ移行
+- Google Fonts 依存を廃止し、ローカル/システムフォントのみでデザインを成立させる
+- `spec/*.js` の TypeScript 移行は可能だが優先度低。必要時に段階的移行（source of truth と生成フローを先に固定）で対応
+
+## Single-file (`sql-formatter.html`) TODO
+- 目標: `sql-formatter.html` をネットワーク非依存で単体動作させる（`sql-formatter-online.html` は対象外）
+- `sql-formatter-src.html` から Tailwind CDN 読み込みを除去し、必要スタイルをローカルCSS/インラインCSSへ置換
+- `sql-formatter-src.html` から Google Fonts 参照を除去し、ローカル/システムフォントへ置換
+- Material Design 3 + カスタム Web Components へ UI 実装を移行（`sql-formatter-src.html`, `src/main.ts`）
+- 入力エリアと出力エリアを画面サイズに追従して最大限広く使うレイアウトへ変更（デスクトップ/モバイル両対応）
+- `npm run build:html` 後の `sql-formatter.html` について、外部 `http(s)` 参照ゼロを検証するチェックを追加
+- `LICENSE` への外部参照は許容（単一動作要件の対象外）

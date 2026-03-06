@@ -17,10 +17,12 @@
 - `spec/apache-calcite-Parser.jj`: 参照文法
 - `AST.md`: AST 仕様（暫定）
 - `FORMATTER_RULES.md`: SQL Formatter の出力ルール
+- `SINGLE_FILE_BUILD.md`: 単一HTML生成（offline/online）ビルド構成
 - `index-parser.html`: SQL → AST 出力の簡易デモ
 - `index.html`: SQL Formatter の UI
-- `sql-formatter.js`: SQL フォーマッター本体
-- `sql-formatter-test.js`: フォーマッターテスト
+- `src/sql-formatter.ts`: SQL フォーマッター本体（ソース）
+- `src/sql-formatter.js`: ブラウザ実行用に build 時に自動生成されるファイル
+- `test/sql-formatter.test.ts`: フォーマッターテスト
 
 ## 使い方（開発時）
 テストを実行してパーサーの動作確認ができます。
@@ -28,7 +30,7 @@
 ### 実行コマンド
 ```bash
 node spec/apache-calcite-Parser-test.js
-node sql-formatter-test.js
+node test/sql-formatter.test.ts
 ```
 
 ### テスト実行ポリシー
@@ -42,7 +44,7 @@ node sql-formatter-test.js
 ### 開発時の基本方針
 - `.md` と `.js` の production 名は一致させる
 - パーサー変更時は `node spec/apache-calcite-Parser-test.js` を実行
-- フォーマッター変更時は `node sql-formatter-test.js` も実行
+- フォーマッター変更時は `node test/sql-formatter.test.ts` も実行
 - 破壊的変更は `TODO.md` に記録
 
 ## 直近の作業予定
@@ -70,7 +72,7 @@ node sql-formatter-test.js
 このプロジェクトは 2 段階のパーサーフォールバック戦略を採用しています：
 
 1. **第1段階**: Apache Calcite パーサー（DML/DQL 最適化）
-   - `sql-formatter.js` の `formatSql()` 関数で使用
+   - `src/sql-formatter.ts` の `formatSql()` 関数で使用
    - SELECT, INSERT, UPDATE, DELETE 文を処理
 
 2. **第2段階**: DDL 専用パーサー（DDL 文対応）
@@ -134,7 +136,7 @@ node sql-formatter-test.js
    - 実装方針: renderNode() に CASE ハンドラー追加
 
 ### テストの追加方法
-`sql-formatter-test.js` に以下の形式で新しいテストグループを追加：
+`test/sql-formatter.test.ts` に以下の形式で新しいテストグループを追加：
 
 ```javascript
 const newFeatureTests = [
