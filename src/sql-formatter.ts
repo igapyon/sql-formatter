@@ -1,10 +1,10 @@
 'use strict';
 
 const isBrowser = typeof window !== 'undefined';
-const CalciteLexerRef = isBrowser ? window.CalciteLexer : require('./spec/apache-calcite-Parser').CalciteLexer;
-const CalciteParserRef = isBrowser ? window.CalciteParser : require('./spec/apache-calcite-Parser').CalciteParser;
-const WellknownDdlLexerRef = isBrowser ? window.WellknownDdlLexer : require('./spec/wellknown-sql-ddl').WellknownDdlLexer;
-const WellknownDdlParserRef = isBrowser ? window.WellknownDdlParser : require('./spec/wellknown-sql-ddl').WellknownDdlParser;
+const CalciteLexerRef = isBrowser ? window.CalciteLexer : require('../spec/apache-calcite-Parser').CalciteLexer;
+const CalciteParserRef = isBrowser ? window.CalciteParser : require('../spec/apache-calcite-Parser').CalciteParser;
+const WellknownDdlLexerRef = isBrowser ? window.WellknownDdlLexer : require('../spec/wellknown-sql-ddl').WellknownDdlLexer;
+const WellknownDdlParserRef = isBrowser ? window.WellknownDdlParser : require('../spec/wellknown-sql-ddl').WellknownDdlParser;
 
 function formatSql(sql) {
   try {
