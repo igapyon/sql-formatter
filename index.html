@@ -1,327 +1,205 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SQL Formatter</title>
-  <link rel="stylesheet" href="./lht-cmn/css/components.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>sql-formatter</title>
   <style>
     :root {
-      color-scheme: light;
-      --page-bg: linear-gradient(180deg, #f7f3fb 0%, #fcfbfd 55%, #f3f6fb 100%);
-      --surface: rgba(255, 255, 255, 0.92);
-      --surface-border: #ddd4ea;
-      --surface-shadow: 0 18px 40px rgba(46, 34, 74, 0.08);
-      --text-main: #261f31;
-      --text-muted: #5b5469;
-      --accent: #2f7c6a;
-      --accent-strong: #236353;
-      --accent-alt: #4966d1;
-      --focus-ring: rgba(79, 101, 205, 0.22);
+      --bg: #f6f4f8;
+      --surface: #ffffff;
+      --text: #1c1b1f;
+      --muted: #5f5a6b;
+      --primary: #2f7c6a;
+      --primary-strong: #236353;
+      --on-primary: #ffffff;
+      --secondary-bg: #f0edf5;
+      --secondary-text: #3f3b46;
+      --outline: #ddd6ea;
     }
 
-    html, body {
-      min-height: 100%;
+    * {
+      box-sizing: border-box;
     }
 
     body {
       margin: 0;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      color: var(--text-main);
-      background: var(--page-bg);
-    }
-
-    .app-shell {
-      max-width: 1040px;
-      margin: 0 auto;
-      padding: 28px 16px 40px;
-    }
-
-    .app-grid {
+      font-family: "BIZ UDPGothic", "Noto Sans JP", "Hiragino Sans", "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
       display: grid;
-      gap: 16px;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      align-items: start;
+      place-items: center;
+      padding: 24px;
     }
 
-    .app-card {
-      border: 1px solid var(--surface-border);
-      border-radius: 22px;
+    .card {
+      width: min(760px, 100%);
       background: var(--surface);
-      box-shadow: var(--surface-shadow);
-      backdrop-filter: blur(8px);
-      padding: 16px;
+      border: 1px solid var(--outline);
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow: 0 8px 24px rgba(20, 14, 35, 0.08);
     }
 
-    .app-card__header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 12px;
+    h1 {
+      margin: 0 0 12px;
+      font-size: 1.9rem;
+      line-height: 1.2;
     }
 
-    .app-card__title {
-      margin: 0;
-      font-size: 0.92rem;
-      line-height: 1.3;
+    h2 {
+      margin: 0 0 10px;
+      font-size: 1.25rem;
+      line-height: 1.25;
     }
 
-    .app-card__desc {
-      margin: 4px 0 0;
-      font-size: 0.82rem;
-      line-height: 1.45;
-      color: var(--text-muted);
+    p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      line-height: 1.7;
     }
 
-    .app-actions {
+    ul {
+      margin: 0 0 16px;
+      padding-left: 1.2rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .link-row {
       display: flex;
       flex-wrap: wrap;
-      justify-content: flex-end;
-      gap: 8px;
+      gap: 10px;
+      margin-top: 4px;
     }
 
-    .app-button {
-      appearance: none;
-      border: none;
+    .link-btn,
+    .link-btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      padding: 0.68rem 1.2rem;
       border-radius: 999px;
-      padding: 0.7rem 1rem;
-      font: inherit;
-      font-size: 0.84rem;
       font-weight: 700;
-      line-height: 1;
-      color: #ffffff;
-      cursor: pointer;
-      transition: transform 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+      line-height: 1.2;
     }
 
-    .app-button:hover {
-      transform: translateY(-1px);
+    .link-btn {
+      background: var(--primary);
+      color: var(--on-primary);
     }
 
-    .app-button:focus-visible {
-      outline: none;
-      box-shadow: 0 0 0 4px var(--focus-ring);
+    .link-btn:hover {
+      background: var(--primary-strong);
     }
 
-    .app-button--parse {
-      background: var(--accent-alt);
-      box-shadow: 0 10px 22px rgba(73, 102, 209, 0.22);
+    .link-btn-secondary {
+      background: var(--secondary-bg);
+      color: var(--secondary-text);
+      border: 1px solid #d2cadf;
     }
 
-    .app-button--parse:hover {
-      background: #3c59c1;
-    }
-
-    .app-button--format {
-      background: var(--accent);
-      box-shadow: 0 10px 22px rgba(47, 124, 106, 0.22);
-    }
-
-    .app-button--format:hover {
-      background: var(--accent-strong);
-    }
-
-    .app-field {
-      display: block;
-    }
-
-    .app-field textarea,
-    .app-field md-outlined-text-field {
-      min-height: 22rem;
-    }
-
-    .app-output {
-      display: block;
-    }
-
-    .app-output #formatOutput {
-      min-height: 22rem;
-      padding-top: 2.8rem;
-      overflow: auto;
-    }
-
-    .app-status {
-      margin: 10px 0 0;
-      font-size: 0.82rem;
-      color: var(--text-muted);
-    }
-
-    .app-divider {
-      margin: 24px 0 14px;
+    .divider {
       border: 0;
-      border-top: 1px solid #ddd7e8;
+      border-top: 1px solid var(--outline);
+      margin: 20px 0;
     }
 
-    .app-footer {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px 18px;
-      font-size: 0.86rem;
-      color: var(--text-muted);
+    .lang-block:last-child p:last-child {
+      margin-bottom: 0;
     }
 
-    .app-footer a {
-      color: #3459c7;
-      text-underline-offset: 0.15em;
-    }
-
-    @media (max-width: 840px) {
-      .app-grid {
-        grid-template-columns: 1fr;
-      }
+    .sub {
+      margin-top: 12px;
+      font-size: 0.9rem;
+      color: var(--muted);
     }
   </style>
 </head>
-<body class="md-page">
-  <main class="app-shell">
-    <lht-page-hero
-      title="SQL Formatter"
-      icon="S"
-      subtitle="DML/DQL と DDL を対象に、AST 確認と整形結果の確認を 1 画面で行えます。"
-      help-label="対象SQL"
-      help-wide
-      menu-home-href="./index.html"
-      menu-home-label="トップへ戻る">
-      <p>DML/DQL（SELECT, INSERT, UPDATE, DELETE）と DDL（CREATE TABLE, ALTER TABLE など）のフォーマットに対応しています。</p>
-      <p>左で SQL を入力し、右で AST またはフォーマット結果を確認します。`Ctrl+Enter` / `Cmd+Enter` で Parse を実行できます。</p>
-    </lht-page-hero>
+<body>
+  <main class="card">
+    <h1>sql-formatter</h1>
 
-    <div class="app-grid">
-      <section class="app-card">
-        <div class="app-card__header">
-          <div>
-            <h2 class="app-card__title">SQL Input</h2>
-            <p class="app-card__desc">入力欄は `lht-text-field-help` を使って統一し、ヘルプはコンポーネント側へ集約します。</p>
-          </div>
-          <div class="app-actions">
-            <button id="parseBtn" class="app-button app-button--parse" type="button">Parse → AST</button>
-            <button id="formatBtn" class="app-button app-button--format" type="button">Format</button>
-          </div>
-        </div>
-        <lht-text-field-help
-          class="app-field"
-          field-id="sqlInput"
-          label="SQL Input"
-          help-text="SQL を入力します。Ctrl+Enter または Cmd+Enter で Parse を実行できます。"
-          type="textarea"
-          rows="18"
-          placeholder="SQL を入力してください"></lht-text-field-help>
-      </section>
+    <section class="lang-block" aria-label="English">
+      <h2>English</h2>
+      <p>
+        sql-formatter is a browser-based SQL formatter and AST viewer.
+        It runs as a single-file web app and works offline in the browser.
+      </p>
+      <ul>
+        <li>Format SQL immediately in the browser.</li>
+        <li>Switch between formatted output and AST view.</li>
+        <li>Useful for syntax inspection, debug, and query review.</li>
+        <li>No installation required.</li>
+      </ul>
+      <p><strong>Target SQL:</strong> DML / DQL such as SELECT, INSERT, UPDATE, DELETE, and DDL such as CREATE TABLE and ALTER TABLE.</p>
+      <div class="link-row">
+        <a class="link-btn" href="./sql-formatter.html?v=202603071300">Open sql-formatter</a>
+        <a class="link-btn-secondary" href="./sql-formatter-online.html?v=202603071300">Open online version</a>
+        <a class="link-btn-secondary" href="https://github.com/igapyon/sql-formatter" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </div>
+      <p class="sub">The app re-runs automatically when you edit SQL or switch AST mode.</p>
+    </section>
 
-      <section class="app-card">
-        <div class="app-card__header">
-          <div>
-            <h2 class="app-card__title">Formatted Output</h2>
-            <p class="app-card__desc">出力欄とコピー導線は `lht-preview-output` に寄せています。</p>
-          </div>
-        </div>
-        <lht-preview-output
-          class="app-output"
-          preview-id="formatOutput"
-          copy-button-id="copyBtn"
-          copy-target-id="formatOutput"
-          preview-tag="pre"
-          placeholder="// formatted output will appear here"
-          copy-aria-label="Copy formatted output"></lht-preview-output>
-        <p id="status" class="app-status">idle</p>
-      </section>
-    </div>
+    <hr class="divider" />
 
-    <hr class="app-divider" />
-    <footer class="app-footer">
-      <a href="https://github.com/igapyon/sql-formatter" target="_blank" rel="noopener noreferrer">GitHub</a>
-      <a href="./LICENSE" target="_blank" rel="noopener noreferrer">License</a>
-      <a href="https://igapyon.github.io/sql-formatter/" target="_blank" rel="noopener noreferrer">GitHub Pages</a>
-    </footer>
+    <section class="lang-block" aria-label="日本語">
+      <h2>日本語</h2>
+      <p>
+        sql-formatter は、ブラウザ上で動作する SQL 整形・AST 確認ツールです。
+        単一 HTML 配布で、ブラウザだけでオフライン動作します。
+      </p>
+      <ul>
+        <li>ブラウザ上ですぐに SQL を整形できます。</li>
+        <li>整形結果と AST 表示を切り替えできます。</li>
+        <li>構文確認、デバッグ、レビュー用途に使えます。</li>
+        <li>インストール不要です。</li>
+      </ul>
+      <p><strong>対象SQL:</strong> SELECT / INSERT / UPDATE / DELETE などの DML / DQL、および CREATE TABLE / ALTER TABLE などの DDL。</p>
+      <div class="link-row">
+        <a class="link-btn" href="./sql-formatter.html?v=202603071300">sql-formatter を開く</a>
+        <a class="link-btn-secondary" href="./sql-formatter-online.html?v=202603071300">online 版を開く</a>
+        <a class="link-btn-secondary" href="https://github.com/igapyon/sql-formatter" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </div>
+      <p class="sub">SQL の入力変更時、および AST スイッチ切替時に自動で再実行されます。</p>
+    </section>
   </main>
-  <lht-toast id="toast"></lht-toast>
-  <script src="./lht-cmn/js/components.js"></script>
-  <script src="./spec/apache-calcite-Parser.js"></script>
-  <script src="./spec/wellknown-sql-ddl.js"></script>
-  <script src="./src/sql-formatter.js"></script>
+
   <script>
-    const input = document.getElementById('sqlInput');
-    const output = document.getElementById('formatOutput');
-    const status = document.getElementById('status');
-    const parseBtn = document.getElementById('parseBtn');
-    const formatBtn = document.getElementById('formatBtn');
-
-    const defaultSql = "SELECT a FROM t WHERE b = 1";
-    input.value = defaultSql;
-
-    function render(text) {
-      output.textContent = text;
-    }
-
-    function handleParse() {
-      const sql = input.value.trim();
-      if (!sql) {
-        output.textContent = '';
-        status.textContent = 'empty';
-        return;
-      }
-      try {
-        const lexer = new window.CalciteLexer(sql);
-        const tokens = lexer.tokenize();
-        const parser = new window.CalciteParser(tokens);
-        const ast = parser.SqlStmtList();
-        status.textContent = `ok (calcite pos: ${parser.pos})`;
-        render(JSON.stringify(ast, null, 2));
-      } catch (err) {
-        if (window.WellknownDdlLexer && window.WellknownDdlParser) {
-          try {
-            const ddlLexer = new window.WellknownDdlLexer(sql);
-            const ddlTokens = ddlLexer.tokenize();
-            const ddlParser = new window.WellknownDdlParser(ddlTokens);
-            const ddlAst = ddlParser.SqlStmtList();
-            status.textContent = `ok (ddl pos: ${ddlParser.pos})`;
-            render(JSON.stringify(ddlAst, null, 2));
-            return;
-          } catch (ddlErr) {
-            status.textContent = 'error';
-            render(JSON.stringify({
-              error: String(err.message || err),
-              ddlError: String(ddlErr.message || ddlErr)
-            }, null, 2));
-            return;
-          }
-        }
-        status.textContent = 'error';
-        render(JSON.stringify({ error: String(err.message || err) }, null, 2));
-      }
-    }
-
-    function handleFormat() {
-      const sql = input.value.trim();
-      if (!sql) {
-        output.textContent = '';
-        status.textContent = 'empty';
-        return;
-      }
-      try {
-        if (typeof window.formatSql !== 'function') {
-          status.textContent = 'error';
-          render('formatter not loaded');
-          return;
-        }
-        const formatted = window.formatSql(sql);
-        status.textContent = 'ok';
-        render(formatted);
-      } catch (err) {
-        status.textContent = 'error';
-        render(String(err.message || err));
-      }
-    }
-
-    parseBtn.addEventListener('click', handleParse);
-    formatBtn.addEventListener('click', handleFormat);
-    input.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleParse();
-    });
-
-    handleParse();
-
+    (() => {
+      const selector = 'a[href^="./sql-formatter.html"], a[href^="./sql-formatter-online.html"]';
+      const buildVersionStamp = () => {
+        const d = new Date();
+        return (
+          d.getFullYear().toString() +
+          String(d.getMonth() + 1).padStart(2, "0") +
+          String(d.getDate()).padStart(2, "0") +
+          String(d.getHours()).padStart(2, "0") +
+          String(d.getMinutes()).padStart(2, "0")
+        );
+      };
+      const stampAndGo = (anchor) => {
+        const u = new URL(anchor.getAttribute("href"), location.href);
+        u.searchParams.set("v", buildVersionStamp());
+        anchor.setAttribute("href", u.pathname + u.search);
+      };
+      document.addEventListener("click", (ev) => {
+        const a = ev.target.closest(selector);
+        if (!a) return;
+        stampAndGo(a);
+      }, true);
+      document.addEventListener("auxclick", (ev) => {
+        if (ev.button !== 1) return;
+        const a = ev.target.closest(selector);
+        if (!a) return;
+        stampAndGo(a);
+      }, true);
+    })();
   </script>
 </body>
 </html>
