@@ -16,7 +16,7 @@ const OFFLINE_VENDOR_FILES = {
   ddl: path.join(ROOT, 'spec/wellknown-sql-ddl.js'),
   formatterSourceTs: path.join(ROOT, 'src/sql-formatter.ts'),
   formatterRuntimeJs: path.join(ROOT, 'src/sql-formatter.js'),
-  materialTextFieldJs: path.join(ROOT, 'vendor/material-web-outlined-text-field.bundle.js'),
+  materialTextFieldJs: path.join(ROOT, 'lht-cmn/vendor/material-web-outlined-text-field.bundle.js'),
   lhtComponentsCss: path.join(ROOT, 'lht-cmn/css/components.css'),
   lhtComponentsJs: path.join(ROOT, 'lht-cmn/js/components.js'),
 };
@@ -25,7 +25,7 @@ const ONLINE_SCRIPT_PATHS = {
   calcite: './spec/apache-calcite-Parser.js',
   ddl: './spec/wellknown-sql-ddl.js',
   formatter: './src/sql-formatter.js',
-  materialTextField: './vendor/material-web-outlined-text-field.bundle.js',
+  materialTextField: './lht-cmn/vendor/material-web-outlined-text-field.bundle.js',
   lhtComponents: './lht-cmn/js/components.js',
 };
 
