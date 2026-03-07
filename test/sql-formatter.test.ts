@@ -1,6 +1,6 @@
 'use strict';
 
-const { formatSql } = require('../src/sql-formatter.ts');
+const { formatSql, formatSqlWithMeta } = require('../src/sql-formatter.ts');
 
 // ============================================================================
 // TEST UTILITIES
@@ -35,6 +35,13 @@ function showDiff(expected, actual) {
  */
 function runTest(testCase) {
   try {
+    if (typeof testCase.run === 'function') {
+      return testCase.run() ? { passed: true } : {
+        passed: false,
+        error: 'custom assertion failed',
+        actual: null,
+      };
+    }
     const out = formatSql(testCase.sql);
     let ok = true;
     let failReason = '';
@@ -1901,6 +1908,25 @@ const passthroughTests = [
   },
 ];
 
+const metaTests = [
+  {
+    name: 'meta-formatted-basic-select',
+    description: 'formatted SQL returns formatted status',
+    run: () => {
+      const result = formatSqlWithMeta('SELECT a FROM t');
+      return result.status === 'formatted' && result.sql.includes('SELECT');
+    },
+  },
+  {
+    name: 'meta-parse-error-invalid-sql',
+    description: 'invalid SQL returns parse-error status',
+    run: () => {
+      const result = formatSqlWithMeta('SELECT * FROM (');
+      return result.status === 'parse-error' && result.message.includes('Parse failed');
+    },
+  },
+];
+
 // ============================================================================
 // TEST RUNNER
 // ============================================================================
@@ -1927,6 +1953,7 @@ const allTestGroups = [
   { name: 'CASE Expressions', tests: caseTests },
   { name: 'ORDER BY Patterns', tests: orderByPatternTests },
   { name: 'Passthrough (Unsupported)', tests: passthroughTests },
+  { name: 'Formatter Meta', tests: metaTests },
 ];
 
 console.log('SQL Formatter Test Suite');
