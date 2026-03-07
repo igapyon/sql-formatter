@@ -115,6 +115,10 @@
       color: var(--text-muted);
     }
 
+    #formatMessage {
+      margin-top: 8px;
+    }
+
     .app-divider {
       margin: 24px 0 14px;
       border: 0;
@@ -194,7 +198,7 @@
           class="app-field"
           field-id="sqlInput"
           label="SQL Input"
-          help-text="Apache Calcite ベースの DML/DQL と、ANSI SQL 風 DDL を主対象にしています。よくある方言は一部許容しますが、Oracle 専用構文を完全保証するものではありません。SQL を入力すると自動で再実行され、AST スイッチ切替時も自動更新されます。文法的に解釈できない場合は、Formatted Output に入力した SQL をそのまま表示します。"
+          help-text="Apache Calcite ベースの DML/DQL と、ANSI SQL 風 DDL を主対象にしています。よくある方言は一部許容しますが、Oracle 専用構文を完全保証するものではありません。SQL を入力すると自動で再実行され、AST スイッチ切替時も自動更新されます。文法的に解釈できない場合や未対応構文が含まれる場合は、Formatted Output に元の SQL を表示し、下部に理由メッセージを出します。"
           type="textarea"
           placeholder="SQL を入力してください"></lht-text-field-help>
       </section>
@@ -214,6 +218,7 @@
           placeholder="// formatted output will appear here"
           copy-aria-label="Copy formatted output"></lht-preview-output>
         <p id="status" class="app-status">idle</p>
+        <lht-error-alert id="formatMessage" variant="warning"></lht-error-alert>
       </section>
     </div>
 

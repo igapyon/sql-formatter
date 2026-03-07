@@ -1,6 +1,7 @@
 const input = document.getElementById('sqlInput');
 const output = document.getElementById('formatOutput');
 const status = document.getElementById('status');
+const formatMessage = document.getElementById('formatMessage');
 const astModeSwitch = document.getElementById('astModeSwitch');
 const copyBtn = document.getElementById('copyBtn');
 let rerenderTimer = null;
@@ -12,6 +13,26 @@ function render(text) {
   output.textContent = text;
 }
 
+function setFormatMessage(kind, text) {
+  if (!formatMessage) return;
+  if (!text) {
+    if (typeof formatMessage.clear === 'function') {
+      formatMessage.clear();
+    } else {
+      formatMessage.removeAttribute('active');
+      formatMessage.setAttribute('text', '');
+    }
+    return;
+  }
+  formatMessage.setAttribute('variant', kind || 'info');
+  formatMessage.setAttribute('text', text);
+  if (typeof formatMessage.show === 'function') {
+    formatMessage.show(text);
+  } else {
+    formatMessage.setAttribute('active', '');
+  }
+}
+
 function isAstMode() {
   return !!astModeSwitch?.checked;
 }
@@ -21,6 +42,7 @@ function handleAst() {
   if (!sql) {
     output.textContent = '';
     status.textContent = 'empty';
+    setFormatMessage('idle', '');
     return;
   }
   try {
@@ -29,6 +51,7 @@ function handleAst() {
     const parser = new window.CalciteParser(tokens);
     const ast = parser.SqlStmtList();
     status.textContent = `ast (calcite pos: ${parser.pos})`;
+    setFormatMessage('idle', '');
     render(JSON.stringify(ast, null, 2));
   } catch (err) {
     if (window.WellknownDdlLexer && window.WellknownDdlParser) {
@@ -38,10 +61,12 @@ function handleAst() {
         const ddlParser = new window.WellknownDdlParser(ddlTokens);
         const ddlAst = ddlParser.SqlStmtList();
         status.textContent = `ast (ddl pos: ${ddlParser.pos})`;
+        setFormatMessage('idle', '');
         render(JSON.stringify(ddlAst, null, 2));
         return;
       } catch (ddlErr) {
         status.textContent = 'error';
+        setFormatMessage('error', 'AST parse failed in both Calcite and DDL parser.');
         render(JSON.stringify({
           error: String(err.message || err),
           ddlError: String(ddlErr.message || ddlErr),
@@ -50,6 +75,7 @@ function handleAst() {
       }
     }
     status.textContent = 'error';
+    setFormatMessage('error', 'AST parse failed.');
     render(JSON.stringify({ error: String(err.message || err) }, null, 2));
   }
 }
@@ -59,19 +85,29 @@ function handleFormat() {
   if (!sql) {
     output.textContent = '';
     status.textContent = 'empty';
+    setFormatMessage('idle', '');
     return;
   }
   try {
-    if (typeof window.formatSql !== 'function') {
+    if (typeof window.formatSqlWithMeta !== 'function') {
       status.textContent = 'error';
+      setFormatMessage('error', 'formatter not loaded');
       render('formatter not loaded');
       return;
     }
-    const formatted = window.formatSql(sql);
-    status.textContent = 'format';
-    render(formatted);
+    const result = window.formatSqlWithMeta(sql);
+    status.textContent = result.status === 'formatted' ? 'format' : result.status;
+    if (result.status === 'parse-error') {
+      setFormatMessage('error', result.message);
+    } else if (result.status === 'passthrough') {
+      setFormatMessage('warning', result.message);
+    } else {
+      setFormatMessage('idle', '');
+    }
+    render(result.sql);
   } catch (err) {
     status.textContent = 'error';
+    setFormatMessage('error', String(err.message || err));
     render(String(err.message || err));
   }
 }

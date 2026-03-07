@@ -4,7 +4,16 @@ const CalciteLexerRef = isBrowser ? window.CalciteLexer : require('../spec/apach
 const CalciteParserRef = isBrowser ? window.CalciteParser : require('../spec/apache-calcite-Parser').CalciteParser;
 const WellknownDdlLexerRef = isBrowser ? window.WellknownDdlLexer : require('../spec/wellknown-sql-ddl').WellknownDdlLexer;
 const WellknownDdlParserRef = isBrowser ? window.WellknownDdlParser : require('../spec/wellknown-sql-ddl').WellknownDdlParser;
-function formatSql(sql) {
+function createFormatResult(formattedSql, status = 'formatted', stage = null, message = null) {
+    return {
+        sql: formattedSql,
+        status,
+        stage,
+        message
+    };
+}
+function formatSqlWithMeta(sql) {
+    let calciteError = null;
     try {
         const lexer = new CalciteLexerRef(sql);
         const tokens = lexer.tokenize();
@@ -16,35 +25,50 @@ function formatSql(sql) {
             root: null
         };
         let rendered = renderNode(ast, ctx).trim();
-        if (!rendered) return sql;
+        if (!rendered) {
+            return createFormatResult(sql, 'passthrough', 'calcite-render', 'Formatter could not render this SQL, so the original text was returned.');
+        }
         if (ctx.unknown) {
             const rawSuffix = extractTopLevelSuffix(sql, tokens);
             if (rawSuffix) {
-                return `${rendered}\n${rawSuffix.trimStart()}`.trimEnd();
+                rendered = `${rendered}\n${rawSuffix.trimStart()}`.trimEnd();
+            } else {
+                rendered = sql;
             }
-            return sql;
+            return createFormatResult(rendered, 'passthrough', 'calcite-unsupported', 'Formatter parsed this SQL only partially, so unsupported parts were left as-is.');
         }
         const lineComments = collectLineComments(sql, tokens);
         rendered = applyLineComments(rendered, lineComments);
-        return rendered;
-    } catch (_err) {
-        try {
-            const ddlLexer = new WellknownDdlLexerRef(sql);
-            const ddlTokens = ddlLexer.tokenize();
-            const ddlParser = new WellknownDdlParserRef(ddlTokens);
-            const ddlAst = ddlParser.SqlStmtList();
-            const ctx = {
-                indent: 0,
-                unknown: false,
-                root: null
-            };
-            const rendered = renderNode(ddlAst, ctx).trim();
-            if (!rendered || ctx.unknown) return sql;
-            return rendered;
-        } catch (_ddlErr) {
-            return sql;
-        }
+        return createFormatResult(rendered);
+    } catch (err) {
+        calciteError = err;
     }
+    try {
+        const ddlLexer = new WellknownDdlLexerRef(sql);
+        const ddlTokens = ddlLexer.tokenize();
+        const ddlParser = new WellknownDdlParserRef(ddlTokens);
+        const ddlAst = ddlParser.SqlStmtList();
+        const ctx = {
+            indent: 0,
+            unknown: false,
+            root: null
+        };
+        const rendered = renderNode(ddlAst, ctx).trim();
+        if (!rendered) {
+            return createFormatResult(sql, 'passthrough', 'ddl-render', 'DDL parser accepted the SQL, but the formatter could not render it.');
+        }
+        if (ctx.unknown) {
+            return createFormatResult(sql, 'passthrough', 'ddl-unsupported', 'DDL parser accepted the SQL only partially, so the original text was returned.');
+        }
+        return createFormatResult(rendered);
+    } catch (ddlErr) {
+        const calciteMessage = String(calciteError?.message || calciteError || 'unknown calcite parse error');
+        const ddlMessage = String(ddlErr?.message || ddlErr || 'unknown ddl parse error');
+        return createFormatResult(sql, 'parse-error', 'parse', `Parse failed. Calcite: ${calciteMessage}. DDL: ${ddlMessage}.`);
+    }
+}
+function formatSql(sql) {
+    return formatSqlWithMeta(sql).sql;
 }
 function withIndent(ctx, indent) {
     return {
@@ -884,11 +908,13 @@ function indent(ctx, extra = 0) {
 }
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-        formatSql
+        formatSql,
+        formatSqlWithMeta
     };
 }
 if (typeof window !== 'undefined') {
     window.formatSql = formatSql;
+    window.formatSqlWithMeta = formatSqlWithMeta;
 }
 
 
