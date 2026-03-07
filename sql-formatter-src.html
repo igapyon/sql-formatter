@@ -169,7 +169,7 @@
       menu-home-href="./index.html"
       menu-home-label="トップへ戻る">
       <p>DML/DQL（SELECT, INSERT, UPDATE, DELETE）と DDL（CREATE TABLE, ALTER TABLE など）のフォーマットに対応しています。</p>
-      <p>左で SQL を入力し、右で AST またはフォーマット結果を確認します。`Ctrl+Enter` / `Cmd+Enter` で Parse を実行できます。</p>
+      <p>左で SQL を入力し、右で AST またはフォーマット結果を確認します。Ctrl+Enter / Cmd+Enter で Parse を実行できます。</p>
     </lht-page-hero>
 
     <div class="app-grid">
@@ -194,7 +194,7 @@
           class="app-field"
           field-id="sqlInput"
           label="SQL Input"
-          help-text="SQL を入力します。Ctrl+Enter または Cmd+Enter で Parse を実行できます。"
+          help-text="Apache Calcite ベースの DML/DQL と、ANSI SQL 風 DDL を主対象にしています。よくある方言は一部許容しますが、Oracle 専用構文を完全保証するものではありません。SQL を入力すると自動で再実行され、AST スイッチ切替時も自動更新されます。文法的に解釈できない場合は、Formatted Output に入力した SQL をそのまま表示します。"
           type="textarea"
           placeholder="SQL を入力してください"></lht-text-field-help>
       </section>
@@ -238,6 +238,7 @@
     </footer>
   </main>
   <lht-toast id="toast"></lht-toast>
+  {{MATERIAL_TEXT_FIELD_SCRIPT}}
   {{LHT_COMPONENTS_SCRIPT}}
   {{CALCITE_PARSER_SCRIPT}}
   {{DDL_PARSER_SCRIPT}}

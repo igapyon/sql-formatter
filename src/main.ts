@@ -2,6 +2,7 @@ const input = document.getElementById('sqlInput');
 const output = document.getElementById('formatOutput');
 const status = document.getElementById('status');
 const astModeSwitch = document.getElementById('astModeSwitch');
+const copyBtn = document.getElementById('copyBtn');
 let rerenderTimer = null;
 
 const defaultSql = 'SELECT a FROM t WHERE b = 1';
@@ -93,7 +94,15 @@ function scheduleRun() {
   }, 120);
 }
 
+function flushScheduledRun() {
+  if (!rerenderTimer) return;
+  clearTimeout(rerenderTimer);
+  rerenderTimer = null;
+  handleRun();
+}
+
 input.addEventListener('input', scheduleRun);
 astModeSwitch?.addEventListener('change', handleRun);
+copyBtn?.addEventListener('click', flushScheduledRun, true);
 
 handleRun();

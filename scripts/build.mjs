@@ -16,6 +16,7 @@ const OFFLINE_VENDOR_FILES = {
   ddl: path.join(ROOT, 'spec/wellknown-sql-ddl.js'),
   formatterSourceTs: path.join(ROOT, 'src/sql-formatter.ts'),
   formatterRuntimeJs: path.join(ROOT, 'src/sql-formatter.js'),
+  materialTextFieldJs: path.join(ROOT, 'vendor/material-web-outlined-text-field.bundle.js'),
   lhtComponentsCss: path.join(ROOT, 'lht-cmn/css/components.css'),
   lhtComponentsJs: path.join(ROOT, 'lht-cmn/js/components.js'),
 };
@@ -24,6 +25,7 @@ const ONLINE_SCRIPT_PATHS = {
   calcite: './spec/apache-calcite-Parser.js',
   ddl: './spec/wellknown-sql-ddl.js',
   formatter: './src/sql-formatter.js',
+  materialTextField: './vendor/material-web-outlined-text-field.bundle.js',
   lhtComponents: './lht-cmn/js/components.js',
 };
 
@@ -37,6 +39,11 @@ const APP_SOURCE_FILES = [
 
 function wrapInlineScript(content) {
   return `<script>\n${content}\n</script>`;
+}
+
+function wrapInlineScriptAsTextContent(content) {
+  const base64 = Buffer.from(content, 'utf8').toString('base64');
+  return `<script>\n(() => {\n  const script = document.createElement('script');\n  script.textContent = atob(${JSON.stringify(base64)});\n  document.head.appendChild(script);\n})();\n</script>`;
 }
 
 function wrapInlineStyle(content) {
@@ -77,10 +84,11 @@ async function buildHtml() {
   await mkdir(path.join(ROOT, 'src'), { recursive: true });
   const template = await readUtf8(TEMPLATE_FILE);
 
-  const [calciteJs, ddlJs, formatterTs, lhtComponentsCss, lhtComponentsJs] = await Promise.all([
+  const [calciteJs, ddlJs, formatterTs, materialTextFieldJs, lhtComponentsCss, lhtComponentsJs] = await Promise.all([
     readUtf8(OFFLINE_VENDOR_FILES.calcite),
     readUtf8(OFFLINE_VENDOR_FILES.ddl),
     readUtf8(OFFLINE_VENDOR_FILES.formatterSourceTs),
+    readUtf8(OFFLINE_VENDOR_FILES.materialTextFieldJs),
     readUtf8(OFFLINE_VENDOR_FILES.lhtComponentsCss),
     readUtf8(OFFLINE_VENDOR_FILES.lhtComponentsJs),
   ]);
@@ -93,6 +101,7 @@ async function buildHtml() {
   const appScript = joinAppSources(appSources);
 
   const offlineHtml = replaceTokens(template, {
+    '{{MATERIAL_TEXT_FIELD_SCRIPT}}': wrapInlineScriptAsTextContent(materialTextFieldJs),
     '{{LHT_COMPONENTS_STYLE}}': wrapInlineStyle(lhtComponentsCss),
     '{{LHT_COMPONENTS_SCRIPT}}': wrapInlineScript(lhtComponentsJs),
     '{{CALCITE_PARSER_SCRIPT}}': wrapInlineScript(calciteJs),
@@ -102,6 +111,7 @@ async function buildHtml() {
   });
 
   const onlineHtml = replaceTokens(template, {
+    '{{MATERIAL_TEXT_FIELD_SCRIPT}}': wrapExternalScript(ONLINE_SCRIPT_PATHS.materialTextField),
     '{{LHT_COMPONENTS_STYLE}}': wrapExternalStyle(ONLINE_STYLE_PATHS.lhtComponents),
     '{{LHT_COMPONENTS_SCRIPT}}': wrapExternalScript(ONLINE_SCRIPT_PATHS.lhtComponents),
     '{{CALCITE_PARSER_SCRIPT}}': wrapExternalScript(ONLINE_SCRIPT_PATHS.calcite),
